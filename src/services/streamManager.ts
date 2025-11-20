@@ -30,33 +30,53 @@ export class StreamUrlManager {
 
   /**
    * Upgrade insecure http:// URLs to https:// for known providers
-   * Specifically handles Global Radio streams that need https://media-ssl.musicradio.com
+   * Handles all major CDN providers that support HTTPS
    */
   private upgradeToHttps(url: string, network?: string): string {
-    if (!url || !url.startsWith('http://')) {
+    if (!url || url.startsWith('https://')) {
       return url;
     }
 
-    // Global Radio: Upgrade to secure endpoint
-    if (network === 'global' || url.includes('media-the.musicradio.com') || url.includes('vis.media-ice.musicradio.com')) {
-      // Replace with secure Global endpoint
-      const secureUrl = url
-        .replace(/http:\/\/(media-the|vis\.media-ice)\.musicradio\.com/, 'https://media-ssl.musicradio.com')
-        .replace(/^http:/, 'https:');
-      console.log(`[StreamManager] Upgraded Global stream URL: ${url} -> ${secureUrl}`);
-      return secureUrl;
+    if (!url.startsWith('http://')) {
+      return url;
     }
 
-    // Bauer: Try to upgrade if it's a known Bauer domain
-    if (network === 'bauer' || url.includes('planetradio.co.uk') || url.includes('stream-mz.planetradio.co.uk')) {
+    // List of known SSL-supporting domains
+    const sslDomains = [
+      'akamaized.net',        // BBC/General
+      'sharp-stream.com',     // Bauer
+      'musicradio.com',       // Global
+      'bauermedia',           // Bauer
+      'global.com',           // Global
+      'radioplayer',          // RadioPlayer
+      'planetradio.co.uk',    // Bauer
+      'stream-mz.planetradio.co.uk', // Bauer
+    ];
+
+    // Check if URL contains any known SSL-supporting domain
+    const hasSslDomain = sslDomains.some(domain => url.includes(domain));
+
+    if (hasSslDomain || network === 'global' || network === 'bauer') {
+      // Global Radio: Special handling for media-ssl endpoint
+      if (network === 'global' || url.includes('media-the.musicradio.com') || url.includes('vis.media-ice.musicradio.com')) {
+        const secureUrl = url
+          .replace(/http:\/\/(media-the|vis\.media-ice)\.musicradio\.com/, 'https://media-ssl.musicradio.com')
+          .replace(/^http:/, 'https:');
+        if (secureUrl !== url) {
+          console.log(`[StreamManager] Upgraded Global stream URL: ${url} -> ${secureUrl}`);
+        }
+        return secureUrl;
+      }
+
+      // For other known SSL domains, upgrade http to https
       const secureUrl = url.replace(/^http:/, 'https:');
       if (secureUrl !== url) {
-        console.log(`[StreamManager] Upgraded Bauer stream URL: ${url} -> ${secureUrl}`);
+        console.log(`[StreamManager] Upgraded stream URL: ${url} -> ${secureUrl}`);
       }
       return secureUrl;
     }
 
-    // For other providers, try simple http -> https upgrade
+    // For unknown domains, try simple http -> https upgrade (may fail, but worth trying)
     return url.replace(/^http:/, 'https:');
   }
 
@@ -102,11 +122,19 @@ export class StreamUrlManager {
       // Network-based routing
       switch (metadata.network) {
         case 'bbc': {
-          // Use lstn.lv proxy pattern (Reliable, HLS, CORS-friendly)
-          // Keep existing logic - it's better than the API
+          // Use direct HTTPS Akamai URLs (bypasses HTTP-only lsn.lv redirector)
           if (metadata.discovery_id) {
-            streamUrl = `http://lsn.lv/bbcradio.m3u8?station=${metadata.discovery_id}&bitrate=96000`;
-            source = 'bbc-lstn';
+            const station = BBCRadioStreamer.getStationByDiscoveryId(metadata.discovery_id);
+            if (station && station.pool) {
+              // Construct HTTPS Akamai URL directly
+              streamUrl = `https://as-hls-ww-live.akamaized.net/pool_${station.pool}/live/ww/${station.id}/${station.id}.isml/${station.id}-audio%3d96000.norewind.m3u8`;
+              source = 'bbc-akamai-https';
+            } else {
+              // Fallback: try to construct URL with discovery_id (may not work for all stations)
+              console.warn(`[StreamManager] No pool found for BBC station ${metadata.discovery_id}, using discovery_id directly`);
+              streamUrl = `https://as-hls-ww-live.akamaized.net/pool_904/live/ww/${metadata.discovery_id}/${metadata.discovery_id}.isml/${metadata.discovery_id}-audio%3d96000.norewind.m3u8`;
+              source = 'bbc-akamai-https-fallback';
+            }
           }
           break;
         }
@@ -176,6 +204,8 @@ export class StreamUrlManager {
 
       // Cache the result if we found a working URL
       if (streamUrl) {
+        // Apply HTTPS upgrade to final URL (handles playlistParser returning HTTP URLs)
+        streamUrl = this.upgradeToHttps(streamUrl, metadata.network);
         this.setInCache(cacheKey, streamUrl, source, homepage, favicon);
         // Return stream result with metadata
         return {
@@ -221,20 +251,10 @@ export class StreamUrlManager {
       // Priority 1: Try BBC (most reliable)
       if (BBCRadioStreamer.isBBCStation(stationName)) {
         const station = BBCRadioStreamer.getStationByName(stationName);
-        if (station) {
-          // Use lstn.lv proxy (reliable, HLS, CORS-friendly)
-          const lstnUrl = BBCRadioStreamer.getLstnUrl(station.id, 96000, false);
-          if (lstnUrl) {
-            streamUrl = lstnUrl;
-            source = 'bbc-lstn';
-          } else {
-            // Fallback to Akamai if lstn.lv URL generation fails
-            const akamaiUrl = BBCRadioStreamer.getAkamaiUrl(station.id, 96000, false);
-            if (akamaiUrl) {
-              streamUrl = akamaiUrl;
-              source = 'bbc-akamai';
-            }
-          }
+        if (station && station.pool) {
+          // Use direct HTTPS Akamai URLs (bypasses HTTP-only lsn.lv redirector)
+          streamUrl = `https://as-hls-ww-live.akamaized.net/pool_${station.pool}/live/ww/${station.id}/${station.id}.isml/${station.id}-audio%3d96000.norewind.m3u8`;
+          source = 'bbc-akamai-https';
         }
       }
 
@@ -276,6 +296,8 @@ export class StreamUrlManager {
 
       // Cache the result if we found a working URL
       if (streamUrl) {
+        // Apply HTTPS upgrade to final URL (handles playlistParser returning HTTP URLs)
+        streamUrl = this.upgradeToHttps(streamUrl);
         this.setInCache(stationName, streamUrl, source, homepage, favicon);
         // Return stream result with metadata
         return {
