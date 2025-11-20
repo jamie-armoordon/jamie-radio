@@ -28,6 +28,37 @@ export class StreamUrlManager {
   private cache: Map<string, CachedUrl> = new Map();
   private cacheTimeout = 4 * 60 * 60 * 1000; // 4 hours
 
+  /**
+   * Upgrade insecure http:// URLs to https:// for known providers
+   * Specifically handles Global Radio streams that need https://media-ssl.musicradio.com
+   */
+  private upgradeToHttps(url: string, network?: string): string {
+    if (!url || !url.startsWith('http://')) {
+      return url;
+    }
+
+    // Global Radio: Upgrade to secure endpoint
+    if (network === 'global' || url.includes('media-the.musicradio.com') || url.includes('vis.media-ice.musicradio.com')) {
+      // Replace with secure Global endpoint
+      const secureUrl = url
+        .replace(/http:\/\/(media-the|vis\.media-ice)\.musicradio\.com/, 'https://media-ssl.musicradio.com')
+        .replace(/^http:/, 'https:');
+      console.log(`[StreamManager] Upgraded Global stream URL: ${url} -> ${secureUrl}`);
+      return secureUrl;
+    }
+
+    // Bauer: Try to upgrade if it's a known Bauer domain
+    if (network === 'bauer' || url.includes('planetradio.co.uk') || url.includes('stream-mz.planetradio.co.uk')) {
+      const secureUrl = url.replace(/^http:/, 'https:');
+      if (secureUrl !== url) {
+        console.log(`[StreamManager] Upgraded Bauer stream URL: ${url} -> ${secureUrl}`);
+      }
+      return secureUrl;
+    }
+
+    // For other providers, try simple http -> https upgrade
+    return url.replace(/^http:/, 'https:');
+  }
 
   /**
    * Get stream URL with caching and fallback strategy
@@ -91,7 +122,10 @@ export class StreamUrlManager {
               
               if (streamMetadata) {
                 // Pass the result to parsePlaylist (handles .m3u/.pls or returns as-is)
-                streamUrl = await parsePlaylist(streamMetadata.url_resolved);
+                let resolvedUrl = await parsePlaylist(streamMetadata.url_resolved);
+                // Upgrade insecure URLs for Global stations
+                resolvedUrl = this.upgradeToHttps(resolvedUrl, metadata.network);
+                streamUrl = resolvedUrl;
                 homepage = streamMetadata.homepage;
                 favicon = streamMetadata.favicon;
                 source = 'radio-browser-dynamic';
@@ -106,7 +140,10 @@ export class StreamUrlManager {
             try {
               const streamMetadata = await resolveStreamByUUID(metadata.uuid);
               if (streamMetadata) {
-                streamUrl = await parsePlaylist(streamMetadata.url_resolved);
+                let resolvedUrl = await parsePlaylist(streamMetadata.url_resolved);
+                // Upgrade insecure URLs for Global stations
+                resolvedUrl = this.upgradeToHttps(resolvedUrl, metadata.network);
+                streamUrl = resolvedUrl;
                 homepage = streamMetadata.homepage;
                 favicon = streamMetadata.favicon;
                 source = 'radio-browser-uuid';
@@ -121,7 +158,10 @@ export class StreamUrlManager {
             try {
               const matching = await searchStationByName(stationName);
               if (matching && matching.url_resolved) {
-                streamUrl = await parsePlaylist(matching.url_resolved);
+                let resolvedUrl = await parsePlaylist(matching.url_resolved);
+                // Upgrade insecure URLs for Global stations
+                resolvedUrl = this.upgradeToHttps(resolvedUrl, metadata.network);
+                streamUrl = resolvedUrl;
                 homepage = matching.homepage || undefined;
                 favicon = matching.favicon || undefined;
                 source = 'radio-browser-name-search';
@@ -203,7 +243,13 @@ export class StreamUrlManager {
         try {
           const streamMetadata = await RadioBrowserClient.resolveStream(stationName);
           if (streamMetadata) {
-            streamUrl = await parsePlaylist(streamMetadata.url_resolved);
+            let resolvedUrl = await parsePlaylist(streamMetadata.url_resolved);
+            // Try to detect network from URL patterns
+            const isGlobal = resolvedUrl.includes('musicradio.com');
+            const isBauer = resolvedUrl.includes('planetradio.co.uk');
+            const network = isGlobal ? 'global' : (isBauer ? 'bauer' : undefined);
+            resolvedUrl = this.upgradeToHttps(resolvedUrl, network);
+            streamUrl = resolvedUrl;
             homepage = streamMetadata.homepage;
             favicon = streamMetadata.favicon;
             source = 'radio-browser-dynamic';
@@ -211,7 +257,13 @@ export class StreamUrlManager {
             // Fallback to name-based search
             const matching = await searchStationByName(stationName);
             if (matching && matching.url_resolved) {
-              streamUrl = await parsePlaylist(matching.url_resolved);
+              let resolvedUrl = await parsePlaylist(matching.url_resolved);
+              // Try to detect network from URL patterns
+              const isGlobal = resolvedUrl.includes('musicradio.com');
+              const isBauer = resolvedUrl.includes('planetradio.co.uk');
+              const network = isGlobal ? 'global' : (isBauer ? 'bauer' : undefined);
+              resolvedUrl = this.upgradeToHttps(resolvedUrl, network);
+              streamUrl = resolvedUrl;
               homepage = matching.homepage || undefined;
               favicon = matching.favicon || undefined;
               source = 'radio-browser-name-search';
