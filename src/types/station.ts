@@ -8,6 +8,7 @@ export interface RadioStation {
   homepage: string;
   favicon: string;
   domain?: string; // Domain for Clearbit logo lookup
+  logoUrl?: string; // Logo URL (deprecated, use API logo endpoint)
   tags: string;
   country: string;
   countrycode: string;

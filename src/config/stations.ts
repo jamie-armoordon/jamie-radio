@@ -16,6 +16,8 @@ export interface StationMetadata {
   discovery_id?: string; // The slug/key used by our discovery services (primarily for BBC lsn.lv)
   location: StationLocation;
   genre?: string;        // From the 'Format/Genre' column (optional for UUID-based stations)
+  domain?: string;       // Domain for Clearbit logo lookup
+  logo_url?: string;    // Legacy logo URL (deprecated, use API logo endpoint)
 }
 
 /**

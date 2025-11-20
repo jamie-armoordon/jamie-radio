@@ -29,7 +29,6 @@ function App() {
     
     // Restore last played station on mount
     const lastPlayed = getLastPlayed();
-    const wasPlaying = getLastPlayingState();
     // Restoring last played station
     if (lastPlayed) {
       setCurrentStation(lastPlayed);
