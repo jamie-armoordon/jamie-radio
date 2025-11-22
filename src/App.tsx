@@ -6,8 +6,11 @@ import { getStationById } from './config/stations';
 import StationList from './components/StationList';
 import StationCard from './components/StationCard';
 import Player from './components/Player';
-import { Radio, Search, Wifi, Clock } from 'lucide-react';
+import { Search, Wifi, Clock, Settings } from 'lucide-react';
 import { useStationHistory } from './hooks/useStationHistory';
+import { useSettingsStore } from './store/settingsStore';
+import { ThemeProvider } from './components/ThemeProvider';
+import SettingsPanel from './components/settings/SettingsPanel';
 import ClockComponent from './components/Clock';
 import Temperature from './components/Temperature';
 
@@ -18,7 +21,9 @@ function App() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const { recentStations, addToHistory, getLastPlayed, getLastPlayingState } = useStationHistory();
+  const { autoplayLastStation, startupView, toggleLargeControls, largeControls } = useSettingsStore();
   const autoplayAttemptedRef = useRef(false);
   const isInitialMountRef = useRef(true);
   const lastPlayingStateRef = useRef<boolean | null>(null);
@@ -26,6 +31,14 @@ function App() {
 
   useEffect(() => {
     loadStations();
+    
+    // Handle startup view
+    if (startupView === 'largeControls' && !largeControls) {
+      toggleLargeControls();
+    } else if (startupView === 'favourites') {
+      // Scroll to favourites section (recent stations)
+      // This is handled by the UI - recent stations are shown at top
+    }
     
     // Restore last played station on mount
     const lastPlayed = getLastPlayed();
@@ -51,12 +64,13 @@ function App() {
     
     // Checking autoplay conditions
     
-    // Auto-play if this is the restored station (regardless of previous playing state)
+    // Auto-play if this is the restored station and autoplayLastStation is enabled
     // This ensures the station is ready to play even if browser blocks autoplay
     if (lastPlayed && lastPlayed.stationuuid === currentStation.stationuuid && !isPlaying) {
       autoplayAttemptedRef.current = true;
       
-      if (wasPlaying) {
+      // Check if autoplay is enabled in settings
+      if (autoplayLastStation && wasPlaying) {
         // Attempting autoplay
         // Wait for Player component to be fully mounted and ready
         const timer = setTimeout(() => {
@@ -205,16 +219,31 @@ function App() {
     try {
       setLoading(true);
       const data = await getUKStations();
-      setStations(data);
-      setFilteredStations(data);
-      
-      // Save to cache
-      try {
-        localStorage.setItem(CACHE_KEY, JSON.stringify(data));
-        localStorage.setItem(CACHE_TIMESTAMP_KEY, Date.now().toString());
-      } catch (err) {
-        console.warn('[Cache] Failed to save to cache:', err);
-      }
+          setStations(data);
+          setFilteredStations(data);
+          
+          // Batch prefetch logos for better performance
+          data.slice(0, 20).forEach((station) => {
+            const params = new URLSearchParams();
+            if (station.homepage) params.set('url', station.homepage);
+            if (station.favicon) params.set('fallback', station.favicon);
+            if (station.id) params.set('stationId', station.id);
+            if (station.domain) params.set('discoveryId', station.domain);
+            if (station.name) params.set('stationName', station.name);
+            const logoSrc = `/api/logo?${params.toString()}`;
+            
+            // Prefetch logo
+            const img = new Image();
+            img.src = logoSrc;
+          });
+          
+          // Save to cache
+          try {
+            localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+            localStorage.setItem(CACHE_TIMESTAMP_KEY, Date.now().toString());
+          } catch (err) {
+            console.warn('[Cache] Failed to save to cache:', err);
+          }
     } catch (err) {
       console.error(err);
     } finally {
@@ -239,7 +268,8 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white selection:bg-purple-500/30">
+    <ThemeProvider currentStation={currentStation}>
+      <div className="min-h-screen bg-slate-950 text-white selection:bg-purple-500/30">
       {/* Background Gradients */}
       <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
         <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-purple-900/20 rounded-full blur-[120px]" />
@@ -252,9 +282,11 @@ function App() {
           <div className="container mx-auto px-6 py-6">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-gradient-to-br from-purple-600 to-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-purple-500/20">
-                  <Radio className="text-white" size={24} />
-                </div>
+                <img 
+                  src="/logo.png" 
+                  alt="JamieRadio Logo" 
+                  className="w-14 h-14 md:w-16 md:h-16 object-contain"
+                />
                 <div>
                   <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-white/60">
                     Jamie Radio
@@ -277,10 +309,17 @@ function App() {
                 />
               </div>
 
-              {/* Clock and Temperature */}
+              {/* Clock, Temperature, and Settings */}
               <div className="flex items-center gap-4 flex-shrink-0">
                 <ClockComponent />
                 <Temperature />
+                <button
+                  onClick={() => setSettingsOpen(true)}
+                  className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
+                  aria-label="Settings"
+                >
+                  <Settings size={20} className="text-white" />
+                </button>
               </div>
             </div>
           </div>
@@ -365,7 +404,11 @@ function App() {
           }}
         />
       </div>
-    </div>
+      </div>
+      
+      {/* Settings Panel */}
+      <SettingsPanel isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
+    </ThemeProvider>
   );
 }
 

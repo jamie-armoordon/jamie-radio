@@ -5,6 +5,27 @@ import { getStationsByLocation } from '../config/stations';
 import { fetchStations, searchStationByName } from './radioBrowser';
 
 /**
+ * Universal HTTPS upgrade - upgrades ALL HTTP URLs to HTTPS
+ * This ensures mixed content compliance on HTTPS sites
+ */
+function upgradeToHttps(url: string): string {
+  if (!url || url.startsWith('https://')) {
+    return url;
+  }
+  if (url.startsWith('http://')) {
+    // Global Radio: Special handling for media-ssl endpoint
+    if (url.includes('media-the.musicradio.com') || url.includes('vis.media-ice.musicradio.com')) {
+      return url
+        .replace(/http:\/\/(media-the|vis\.media-ice)\.musicradio\.com/, 'https://media-ssl.musicradio.com')
+        .replace(/^http:/, 'https:');
+    }
+    // Universal upgrade: ALL HTTP URLs -> HTTPS
+    return url.replace(/^http:/, 'https:');
+  }
+  return url;
+}
+
+/**
  * Create RadioStation from StationMetadata
  * Transforms the new metadata format to the RadioStation interface expected by UI components
  * @param metadata - Station config metadata
@@ -20,6 +41,8 @@ function createStationFromMetadata(
   homepage?: string,
   favicon?: string
 ): RadioStation {
+  // Upgrade URL to HTTPS for mixed content compliance
+  resolvedUrl = upgradeToHttps(resolvedUrl);
   // Determine bitrate from URL or default to 320
   let bitrate = 320;
   if (resolvedUrl) {
@@ -279,6 +302,14 @@ export async function getUKStations(): Promise<RadioStation[]> {
 
     // Add manually found stations to the list (prioritize them)
     radioBrowserStations = [...manualStations, ...filtered];
+    
+    // Upgrade ALL URLs to HTTPS for mixed content compliance
+    radioBrowserStations = radioBrowserStations.map(station => ({
+      ...station,
+      url: upgradeToHttps(station.url || ''),
+      url_resolved: upgradeToHttps(station.url_resolved || station.url || ''),
+    }));
+    
     console.log(`Total RadioBrowser stations: ${radioBrowserStations.length} (${manualStations.length} manual + ${filtered.length} filtered)`);
   } catch (error) {
     console.warn('Failed to fetch stations from RadioBrowser:', error);

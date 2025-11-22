@@ -29,8 +29,9 @@ export class StreamUrlManager {
   private cacheTimeout = 4 * 60 * 60 * 1000; // 4 hours
 
   /**
-   * Upgrade insecure http:// URLs to https:// for known providers
-   * Handles all major CDN providers that support HTTPS
+   * Universal HTTPS upgrade - upgrades ALL HTTP URLs to HTTPS
+   * This is necessary for mixed content compliance on HTTPS sites
+   * Most modern CDNs support HTTPS, so this works for the vast majority of streams
    */
   private upgradeToHttps(url: string, network?: string): string {
     if (!url || url.startsWith('https://')) {
@@ -41,43 +42,27 @@ export class StreamUrlManager {
       return url;
     }
 
-    // List of known SSL-supporting domains
-    const sslDomains = [
-      'akamaized.net',        // BBC/General
-      'sharp-stream.com',     // Bauer
-      'musicradio.com',       // Global
-      'bauermedia',           // Bauer
-      'global.com',           // Global
-      'radioplayer',          // RadioPlayer
-      'planetradio.co.uk',    // Bauer
-      'stream-mz.planetradio.co.uk', // Bauer
-    ];
-
-    // Check if URL contains any known SSL-supporting domain
-    const hasSslDomain = sslDomains.some(domain => url.includes(domain));
-
-    if (hasSslDomain || network === 'global' || network === 'bauer') {
-      // Global Radio: Special handling for media-ssl endpoint
-      if (network === 'global' || url.includes('media-the.musicradio.com') || url.includes('vis.media-ice.musicradio.com')) {
-        const secureUrl = url
-          .replace(/http:\/\/(media-the|vis\.media-ice)\.musicradio\.com/, 'https://media-ssl.musicradio.com')
-          .replace(/^http:/, 'https:');
-        if (secureUrl !== url) {
-          console.log(`[StreamManager] Upgraded Global stream URL: ${url} -> ${secureUrl}`);
-        }
-        return secureUrl;
-      }
-
-      // For other known SSL domains, upgrade http to https
-      const secureUrl = url.replace(/^http:/, 'https:');
+    // Global Radio: Special handling for media-ssl endpoint
+    if (network === 'global' || url.includes('media-the.musicradio.com') || url.includes('vis.media-ice.musicradio.com')) {
+      const secureUrl = url
+        .replace(/http:\/\/(media-the|vis\.media-ice)\.musicradio\.com/, 'https://media-ssl.musicradio.com')
+        .replace(/^http:/, 'https:');
       if (secureUrl !== url) {
-        console.log(`[StreamManager] Upgraded stream URL: ${url} -> ${secureUrl}`);
+        console.log(`[StreamManager] Upgraded Global stream URL: ${url} -> ${secureUrl}`);
       }
       return secureUrl;
     }
 
-    // For unknown domains, try simple http -> https upgrade (may fail, but worth trying)
-    return url.replace(/^http:/, 'https:');
+    // Universal upgrade: ALL HTTP URLs -> HTTPS
+    // This is safe because:
+    // 1. Most modern CDNs support HTTPS
+    // 2. Browser will handle failures gracefully
+    // 3. Better than blocking due to mixed content
+    const secureUrl = url.replace(/^http:/, 'https:');
+    if (secureUrl !== url) {
+      console.log(`[StreamManager] Upgraded HTTP to HTTPS: ${url} -> ${secureUrl}`);
+    }
+    return secureUrl;
   }
 
   /**
@@ -104,9 +89,10 @@ export class StreamUrlManager {
     // Check cache first
     const cached = this.getCachedEntry(cacheKey);
     if (cached) {
-      // Using cached result
+      // Upgrade cached URL to HTTPS (cache might contain old HTTP URLs)
+      const upgradedUrl = this.upgradeToHttps(cached.url, metadata.network);
       return {
-        url: cached.url,
+        url: upgradedUrl,
         homepage: cached.homepage,
         favicon: cached.favicon,
         source: cached.source,
@@ -233,9 +219,10 @@ export class StreamUrlManager {
       // Check cache first
       const cached = this.getCachedEntry(stationName);
       if (cached) {
-        // Using cached result
+        // Upgrade cached URL to HTTPS (cache might contain old HTTP URLs)
+        const upgradedUrl = this.upgradeToHttps(cached.url);
         return {
-          url: cached.url,
+          url: upgradedUrl,
           homepage: cached.homepage,
           favicon: cached.favicon,
           source: cached.source,

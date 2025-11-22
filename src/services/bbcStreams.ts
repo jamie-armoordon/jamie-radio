@@ -153,18 +153,16 @@ export class BBCRadioStreamer {
   }
 
   /**
-   * Get stream URL with fallback strategy (lstn.lv first, then Akamai)
+   * Get stream URL with fallback strategy (HTTPS Akamai only)
    * @param stationKey - Station key
    * @param bitrate - Bitrate in bps (default: 96000)
    * @param ukOnly - Use UK-only streams (default: false)
-   * @returns Array of URLs to try in order
+   * @returns Array of URLs to try in order (HTTPS only)
    */
   static getStreamUrls(stationKey: string, bitrate: number = 96000, ukOnly: boolean = false): string[] {
     const urls: string[] = [];
     
-    const lstnUrl = this.getLstnUrl(stationKey, bitrate, ukOnly);
-    if (lstnUrl) urls.push(lstnUrl);
-
+    // Use HTTPS Akamai directly (replaces HTTP-only lsn.lv)
     const akamaiUrl = this.getAkamaiUrl(stationKey, bitrate, ukOnly);
     if (akamaiUrl) urls.push(akamaiUrl);
 
@@ -243,20 +241,21 @@ export class BBCRadioStreamer {
   }
 
   /**
-   * Get lstn.lv URL by station object
+   * Get HTTPS Akamai URL by station object (replaces lsn.lv)
    */
   private static getLstnUrlByStation(station: BBCStation, bitrate: number = 96000, ukOnly: boolean = false): string | null {
-    const uk = ukOnly ? '&uk=1' : '';
-    return `http://lsn.lv/bbcradio.m3u8?station=${station.id}&bitrate=${bitrate}${uk}`;
+    // Use HTTPS Akamai directly (replaces HTTP-only lsn.lv)
+    return this.getAkamaiUrlByStation(station, bitrate, ukOnly);
   }
 
   /**
-   * Get Akamai URL by station object
+   * Get HTTPS Akamai URL by station object
    */
   private static getAkamaiUrlByStation(station: BBCStation, bitrate: number = 96000, ukOnly: boolean = false): string | null {
     if (!station.pool) return null;
     const region = ukOnly ? 'uk' : 'ww';
-    return `http://as-hls-${region}-live.akamaized.net/pool_${station.pool}/live/${region}/${station.id}/${station.id}.isml/${station.id}-audio%3d${bitrate}.norewind.m3u8`;
+    // Always use HTTPS for mixed content compliance
+    return `https://as-hls-${region}-live.akamaized.net/pool_${station.pool}/live/${region}/${station.id}/${station.id}.isml/${station.id}-audio%3d${bitrate}.norewind.m3u8`;
   }
 
   /**

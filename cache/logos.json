@@ -422,5 +422,17 @@
   "logo_nation radio_nationplayer.com": {
     "url": "https://mmo.aiircdn.com/677/66fd2f45b388a.png",
     "expires": 1764240400687
+  },
+  "homepage_bbc radio 5 live sports extra": {
+    "url": "https://www.bbc.co.uk/sounds/play/live/bbc_radio_five_live_sports_extra",
+    "expires": 1764375245235
+  },
+  "eilo.org": {
+    "url": "https://eilo.org/press/eilo_default.jpg",
+    "expires": 1764375247122
+  },
+  "logo_chill radio_eilo.org": {
+    "url": "https://eilo.org/press/eilo_default.jpg",
+    "expires": 1764375247122
   }
 }

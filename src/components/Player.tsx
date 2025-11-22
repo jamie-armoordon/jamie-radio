@@ -2,8 +2,12 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import type { RadioStation } from '../types/station';
 import { motion, AnimatePresence } from 'framer-motion';
 import Hls from 'hls.js';
-import { Play, Pause, Volume2, VolumeX, AlertCircle, Loader2 } from 'lucide-react';
+import { Play, Pause, Volume2, VolumeX, AlertCircle, Loader2, WifiOff } from 'lucide-react';
 import { useStationMetadata } from '../hooks/useStationMetadata';
+import { useSettingsStore } from '../store/settingsStore';
+import { useIdleTimeout } from '../hooks/useIdleTimeout';
+import Visualizer from './Visualizer';
+import PlayerLargeControls from './PlayerLargeControls';
 
 interface PlayerProps {
   station: RadioStation | null;
@@ -20,10 +24,32 @@ export default function Player({ station, isPlaying, onPlay, onPause }: PlayerPr
   const [swipeProgress, setSwipeProgress] = useState(0);
   const fullscreenRef = useRef<HTMLDivElement>(null);
   const indicatorRef = useRef<HTMLDivElement>(null);
-  const idleTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const lastInteractionRef = useRef<number>(Date.now());
   const touchStartYRef = useRef<number | null>(null);
   const animationFrameRef = useRef<number | null>(null);
+  
+  // Settings
+  const { largeControls, visualizerEnabled, audio: audioSettings } = useSettingsStore();
+  
+  // Audio pipeline refs
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const compressorRef = useRef<DynamicsCompressorNode | null>(null);
+  const eqFilterRef = useRef<BiquadFilterNode | null>(null);
+  const gainNodeRef = useRef<GainNode | null>(null);
+  const previousStationRef = useRef<RadioStation | null>(null);
+  
+  // Reconnect state
+  const [isOffline, setIsOffline] = useState(false);
+  const [reconnectAttempt, setReconnectAttempt] = useState(0);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isReconnectingRef = useRef(false);
+  
+  // Idle timeout hook
+  const isIdle = useIdleTimeout({ 
+    timeout: 30000, // 30 seconds
+    enabled: isPlaying && !!station && !isFullscreen 
+  });
+  
   const [volume, setVolume] = useState(() => {
     try {
       const stored = localStorage.getItem('jamie_radio_volume');
@@ -62,6 +88,171 @@ export default function Player({ station, isPlaying, onPlay, onPause }: PlayerPr
   
   // Station and metadata tracking (no debug logs)
 
+  // Haptic feedback helper
+  const triggerHaptic = () => {
+    if (navigator.vibrate) {
+      navigator.vibrate(10);
+    }
+  };
+
+  // Offline detection
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOffline(false);
+      if (isPlaying && station && error) {
+        // Auto-retry when connection returns
+        setReconnectAttempt(0);
+        isReconnectingRef.current = false;
+      }
+    };
+    const handleOffline = () => {
+      setIsOffline(true);
+    };
+
+    setIsOffline(!navigator.onLine);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [isPlaying, station, error]);
+
+  // Audio pipeline setup with Web Audio API
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    // Create AudioContext (singleton)
+    if (!audioContextRef.current) {
+      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+
+    const audioContext = audioContextRef.current;
+
+    // Create source node from audio element
+    if (!sourceNodeRef.current) {
+      sourceNodeRef.current = audioContext.createMediaElementSource(audio);
+    }
+
+    // Create compressor for normalization
+    if (!compressorRef.current) {
+      compressorRef.current = audioContext.createDynamicsCompressor();
+      compressorRef.current.threshold.value = -24;
+      compressorRef.current.knee.value = 30;
+      compressorRef.current.ratio.value = 12;
+      compressorRef.current.attack.value = 0.003;
+      compressorRef.current.release.value = 0.25;
+    }
+
+    // Create EQ filter
+    if (!eqFilterRef.current) {
+      eqFilterRef.current = audioContext.createBiquadFilter();
+    }
+
+    // Create gain node for crossfade and volume
+    if (!gainNodeRef.current) {
+      gainNodeRef.current = audioContext.createGain();
+      gainNodeRef.current.gain.value = volume;
+    }
+
+    // Connect audio pipeline: source → compressor → EQ → gain → destination
+    const source = sourceNodeRef.current;
+    const compressor = compressorRef.current;
+    const eq = eqFilterRef.current;
+    const gain = gainNodeRef.current;
+
+    // Disconnect existing connections
+    source.disconnect();
+    compressor.disconnect();
+    eq.disconnect();
+    gain.disconnect();
+
+    // Reconnect based on settings
+    if (audioSettings.normalizationEnabled) {
+      source.connect(compressor);
+      compressor.connect(eq);
+    } else {
+      source.connect(eq);
+    }
+    eq.connect(gain);
+    gain.connect(audioContext.destination);
+
+    // Apply EQ preset
+    const applyEqPreset = (preset: typeof audioSettings.eqPreset) => {
+      if (!eq) return;
+      
+      switch (preset) {
+        case 'bass':
+          eq.type = 'lowshelf';
+          eq.frequency.value = 250;
+          eq.gain.value = 8;
+          break;
+        case 'treble':
+          eq.type = 'highshelf';
+          eq.frequency.value = 4000;
+          eq.gain.value = 8;
+          break;
+        case 'voice':
+          eq.type = 'peaking';
+          eq.frequency.value = 2000;
+          eq.gain.value = 6;
+          eq.Q.value = 1;
+          break;
+        case 'flat':
+        default:
+          eq.gain.value = 0;
+          break;
+      }
+    };
+
+    applyEqPreset(audioSettings.eqPreset);
+    compressor.threshold.value = audioSettings.normalizationEnabled ? -24 : 0;
+
+    return () => {
+      // Cleanup handled by component unmount
+    };
+  }, [audioSettings.eqPreset, audioSettings.normalizationEnabled, volume]);
+
+  // Update gain node volume
+  useEffect(() => {
+    if (gainNodeRef.current) {
+      gainNodeRef.current.gain.value = isMuted ? 0 : volume;
+    }
+  }, [volume, isMuted]);
+
+  // Crossfade when changing stations
+  useEffect(() => {
+    if (!gainNodeRef.current || !station) return;
+    
+    const gain = gainNodeRef.current;
+    const previousStation = previousStationRef.current;
+    
+    // Only crossfade if we're switching stations (not initial load)
+    if (previousStation && previousStation.stationuuid !== station.stationuuid && isPlaying) {
+      const fadeDuration = 0.3; // 300ms
+      const currentTime = audioContextRef.current?.currentTime || 0;
+      
+      // Fade out
+      gain.gain.cancelScheduledValues(currentTime);
+      gain.gain.setValueAtTime(volume, currentTime);
+      gain.gain.linearRampToValueAtTime(0, currentTime + fadeDuration);
+      
+      // Fade in after a short delay
+      setTimeout(() => {
+        if (gainNodeRef.current && audioContextRef.current) {
+          const newTime = audioContextRef.current.currentTime;
+          gainNodeRef.current.gain.cancelScheduledValues(newTime);
+          gainNodeRef.current.gain.setValueAtTime(0, newTime);
+          gainNodeRef.current.gain.linearRampToValueAtTime(isMuted ? 0 : volume, newTime + fadeDuration);
+        }
+      }, fadeDuration * 1000);
+    }
+    
+    previousStationRef.current = station;
+  }, [station?.stationuuid, isPlaying, volume, isMuted]);
+
   // Handle Audio Events
   useEffect(() => {
     const audio = audioRef.current
@@ -94,11 +285,16 @@ export default function Player({ station, isPlaying, onPlay, onPause }: PlayerPr
       }
       
       if (error && (error.code === MediaError.MEDIA_ERR_NETWORK || error.code === MediaError.MEDIA_ERR_DECODE)) {
-        // Fatal error - pausing
-        setError(`Stream unavailable (${errorDetails.errorName})`)
-        setIsLoading(false)
-        if (!isInitializingRef.current) {
-          onPause()
+        // Fatal error - attempt reconnect with exponential backoff
+        if (!isReconnectingRef.current && isPlaying) {
+          isReconnectingRef.current = true;
+          attemptReconnect();
+        } else {
+          setError(`Stream unavailable (${errorDetails.errorName})`)
+          setIsLoading(false)
+          if (!isInitializingRef.current) {
+            onPause()
+          }
         }
       } else if (error && error.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
         // Format not supported - pausing
@@ -170,12 +366,26 @@ export default function Player({ station, isPlaying, onPlay, onPause }: PlayerPr
     }
 
     if (isPlaying) {
-      const streamUrl = station.url_resolved || station.url
+      let streamUrl = station.url_resolved || station.url
       if (!streamUrl) {
         setError("No URL")
         setIsLoading(false)
         onPause()
         return
+      }
+      
+      // Universal HTTPS upgrade for mixed content compliance
+      // Upgrade ALL HTTP URLs to HTTPS (safety net)
+      if (streamUrl.startsWith('http://')) {
+        // Global Radio: Special handling for media-ssl endpoint
+        if (streamUrl.includes('media-the.musicradio.com') || streamUrl.includes('vis.media-ice.musicradio.com')) {
+          streamUrl = streamUrl
+            .replace(/http:\/\/(media-the|vis\.media-ice)\.musicradio\.com/, 'https://media-ssl.musicradio.com')
+            .replace(/^http:/, 'https:');
+        } else {
+          // Universal upgrade: ALL HTTP URLs -> HTTPS
+          streamUrl = streamUrl.replace(/^http:/, 'https:');
+        }
       }
 
       // Mark as initializing to prevent premature pause
@@ -291,7 +501,16 @@ export default function Player({ station, isPlaying, onPlay, onPause }: PlayerPr
     } catch (err) {
       console.error('Failed to save volume preference:', err);
     }
-  }, [volume])
+  }, [volume]);
+
+  // Cleanup reconnect timeout
+  useEffect(() => {
+    return () => {
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // MediaSession API for iOS metadata support
   useEffect(() => {
@@ -375,48 +594,51 @@ export default function Player({ station, isPlaying, onPlay, onPause }: PlayerPr
     };
   }, [station, metadata, logoSrc, isPlaying, onPlay, onPause]);
 
-  // Idle detection for auto fullscreen
-  useEffect(() => {
-    if (!isPlaying || !station) {
-      if (idleTimerRef.current) {
-        clearTimeout(idleTimerRef.current);
-        idleTimerRef.current = null;
-      }
+  // Reconnect with exponential backoff
+  const attemptReconnect = () => {
+    if (!isPlaying || !station || isOffline) return;
+
+    const maxAttempts = 5;
+    if (reconnectAttempt >= maxAttempts) {
+      setError('Connection failed after multiple attempts');
+      setIsLoading(false);
+      isReconnectingRef.current = false;
       return;
     }
 
-    const handleInteraction = () => {
-      lastInteractionRef.current = Date.now();
-      if (idleTimerRef.current) {
-        clearTimeout(idleTimerRef.current);
-      }
-      
-      // Set timer for 1 minute of inactivity
-      idleTimerRef.current = setTimeout(() => {
-        if (isPlaying && station && !isFullscreen) {
-          setIsFullscreen(true);
+    const backoffDelays = [1000, 2000, 4000, 8000, 10000];
+    const delay = backoffDelays[Math.min(reconnectAttempt, backoffDelays.length - 1)];
+    
+    setReconnectAttempt((prev) => prev + 1);
+    setError(`Reconnecting… (attempt ${reconnectAttempt + 1})`);
+    setIsLoading(true);
+
+    reconnectTimeoutRef.current = setTimeout(() => {
+      if (isPlaying && station) {
+        // Trigger stream reload by updating isPlaying
+        const audio = audioRef.current;
+        if (audio) {
+          audio.load();
+          audio.play().catch(() => {
+            // Retry again if play fails
+            if (reconnectAttempt < maxAttempts) {
+              attemptReconnect();
+            }
+          });
         }
-      }, 60000); // 1 minute
-    };
-
-    // Initial timer
-    handleInteraction();
-
-    // Listen for user interactions
-    const events = ['touchstart', 'mousedown', 'keydown', 'scroll', 'click'];
-    events.forEach(event => {
-      window.addEventListener(event, handleInteraction, { passive: true });
-    });
-
-    return () => {
-      if (idleTimerRef.current) {
-        clearTimeout(idleTimerRef.current);
       }
-      events.forEach(event => {
-        window.removeEventListener(event, handleInteraction);
-      });
-    };
-  }, [isPlaying, station, isFullscreen]);
+    }, delay);
+  };
+
+  // Idle detection for auto fullscreen using hook
+  useEffect(() => {
+    if (isIdle && isPlaying && station && !isFullscreen) {
+      setIsFullscreen(true);
+    } else if (!isIdle && isFullscreen) {
+      // Exit fullscreen on interaction (optional - can be removed if you want manual exit only)
+      // setIsFullscreen(false);
+    }
+  }, [isIdle, isPlaying, station, isFullscreen]);
 
   // Swipe down gesture detection with optimized animation (direct DOM manipulation)
   useEffect(() => {
@@ -592,7 +814,51 @@ export default function Player({ station, isPlaying, onPlay, onPause }: PlayerPr
 
   // Don't prevent body scroll - let fullscreen container handle it
 
-  if (!station) return null
+  if (!station) return null;
+
+  // Large controls mode
+  if (largeControls) {
+    return (
+      <>
+        <audio ref={audioRef} />
+        <PlayerLargeControls
+          station={station}
+          isPlaying={isPlaying}
+          isLoading={isLoading}
+          volume={volume}
+          isMuted={isMuted}
+          onPlay={() => {
+            triggerHaptic();
+            onPlay();
+          }}
+          onPause={() => {
+            triggerHaptic();
+            onPause();
+          }}
+          onVolumeChange={(vol) => {
+            triggerHaptic();
+            setVolume(vol);
+            setIsMuted(false);
+          }}
+          onMuteToggle={() => {
+            triggerHaptic();
+            setIsMuted(!isMuted);
+          }}
+        />
+        {visualizerEnabled && <Visualizer audioElement={audioRef.current} enabled={visualizerEnabled} />}
+        {/* Offline overlay */}
+        {isOffline && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[300] flex items-center justify-center">
+            <div className="bg-slate-900 rounded-2xl p-6 border border-white/10 text-center">
+              <WifiOff size={48} className="text-red-400 mx-auto mb-4" />
+              <h3 className="text-white text-xl font-bold mb-2">Offline Mode</h3>
+              <p className="text-white/60">Please check your internet connection</p>
+            </div>
+          </div>
+        )}
+      </>
+    );
+  }
 
   return (
     <>
@@ -727,10 +993,17 @@ export default function Player({ station, isPlaying, onPlay, onPause }: PlayerPr
                     <span>{error}</span>
                   </div>
                 ) : isLoading ? (
-                  <div className="flex items-center gap-1.5 text-purple-300 text-sm mt-1">
-                    <Loader2 size={14} className="animate-spin" />
-                    <span>Connecting...</span>
-                  </div>
+                  reconnectAttempt > 0 ? (
+                    <div className="flex items-center gap-1.5 text-purple-300 text-sm mt-1">
+                      <Loader2 size={14} className="animate-spin" />
+                      <span>Reconnecting… (attempt {reconnectAttempt})</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5 text-purple-300 text-sm mt-1">
+                      <Loader2 size={14} className="animate-spin" />
+                      <span>Connecting...</span>
+                    </div>
+                  )
                 ) : null}
               </div>
             </div>
@@ -742,6 +1015,7 @@ export default function Player({ station, isPlaying, onPlay, onPause }: PlayerPr
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
+                    triggerHaptic();
                     setIsMuted(!isMuted);
                   }}
                   className="text-white/70 hover:text-white transition-colors"
@@ -755,6 +1029,7 @@ export default function Player({ station, isPlaying, onPlay, onPause }: PlayerPr
                   step="0.01"
                   value={isMuted ? 0 : volume}
                   onChange={(e) => {
+                    triggerHaptic();
                     setVolume(Number.parseFloat(e.target.value))
                     setIsMuted(false)
                   }}
@@ -768,6 +1043,7 @@ export default function Player({ station, isPlaying, onPlay, onPause }: PlayerPr
                 whileTap={{ scale: 0.95 }}
                 onClick={(e) => {
                   e.stopPropagation();
+                  triggerHaptic();
                   if (isPlaying) {
                     onPause();
                   } else {
@@ -794,6 +1070,8 @@ export default function Player({ station, isPlaying, onPlay, onPause }: PlayerPr
             </div>
           </div>
         </div>
+        {/* Visualizer */}
+        {visualizerEnabled && <Visualizer audioElement={audioRef.current} enabled={visualizerEnabled} />}
       </motion.div>
         )}
       </AnimatePresence>
@@ -1063,10 +1341,17 @@ export default function Player({ station, isPlaying, onPlay, onPause }: PlayerPr
                     <span>{error}</span>
                   </div>
                 ) : isLoading ? (
-                  <div className="flex items-center justify-center gap-2 text-purple-300 text-sm md:text-base mt-2">
-                    <Loader2 size={16} className="animate-spin" />
-                    <span>Connecting...</span>
-                  </div>
+                  reconnectAttempt > 0 ? (
+                    <div className="flex items-center justify-center gap-2 text-purple-300 text-sm md:text-base mt-2">
+                      <Loader2 size={16} className="animate-spin" />
+                      <span>Reconnecting… (attempt {reconnectAttempt})</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center gap-2 text-purple-300 text-sm md:text-base mt-2">
+                      <Loader2 size={16} className="animate-spin" />
+                      <span>Connecting...</span>
+                    </div>
+                  )
                 ) : null}
               </motion.div>
 
@@ -1090,6 +1375,7 @@ export default function Player({ station, isPlaying, onPlay, onPause }: PlayerPr
                   whileTap={{ scale: 0.95 }}
                   onClick={(e) => {
                     e.stopPropagation();
+                    triggerHaptic();
                     if (isPlaying) {
                       onPause();
                     } else {
@@ -1119,6 +1405,7 @@ export default function Player({ station, isPlaying, onPlay, onPause }: PlayerPr
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
+                      triggerHaptic();
                       setIsMuted(!isMuted);
                     }}
                     className="text-white/70 hover:text-white transition-colors"
@@ -1132,6 +1419,7 @@ export default function Player({ station, isPlaying, onPlay, onPause }: PlayerPr
                     step="0.01"
                     value={isMuted ? 0 : volume}
                     onChange={(e) => {
+                      triggerHaptic();
                       setVolume(Number.parseFloat(e.target.value));
                       setIsMuted(false);
                     }}
@@ -1159,6 +1447,17 @@ export default function Player({ station, isPlaying, onPlay, onPause }: PlayerPr
           </motion.div>
         )}
       </AnimatePresence>
+      
+      {/* Offline overlay */}
+      {isOffline && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[300] flex items-center justify-center">
+          <div className="bg-slate-900 rounded-2xl p-6 border border-white/10 text-center">
+            <WifiOff size={48} className="text-red-400 mx-auto mb-4" />
+            <h3 className="text-white text-xl font-bold mb-2">Offline Mode</h3>
+            <p className="text-white/60">Please check your internet connection</p>
+          </div>
+        </div>
+      )}
     </>
   )
 }
