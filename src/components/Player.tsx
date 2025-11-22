@@ -619,6 +619,18 @@ export default function Player({ station, isPlaying, onPlay, onPause }: PlayerPr
     } else {
       mediaSession.playbackState = 'paused';
     }
+
+    // Clear position state for live radio streams (no progress bar/time indicator)
+    // This prevents iOS from showing a song-like progress bar
+    try {
+      if ('setPositionState' in mediaSession) {
+        // Clear position state to indicate it's a live stream
+        mediaSession.setPositionState(null as any);
+      }
+    } catch (e) {
+      // Some browsers may not support setPositionState or may throw errors
+      // Ignore silently
+    }
   }, [station, metadata, logoSrc, isPlaying]);
 
   // Reconnect with exponential backoff
