@@ -6,6 +6,9 @@ import { Play, Pause, Volume2, VolumeX, AlertCircle, Loader2, WifiOff } from 'lu
 import { useStationMetadata } from '../hooks/useStationMetadata';
 import { useSettingsStore } from '../store/settingsStore';
 import { useIdleTimeout } from '../hooks/useIdleTimeout';
+import { useGestureControls } from '../hooks/useGestureControls';
+import { getVoiceControl } from '../services/voiceControl';
+import { speakResponse } from '../services/voiceFeedback';
 import Visualizer from './Visualizer';
 import PlayerLargeControls from './PlayerLargeControls';
 
@@ -14,9 +17,30 @@ interface PlayerProps {
   isPlaying: boolean;
   onPlay: () => void;
   onPause: () => void;
+  onToggleMute?: () => void;
+  onExitFullscreen?: () => void;
+  recentStations?: RadioStation[];
+  onNextStation?: () => void;
+  onPreviousStation?: () => void;
+  onPlayStation?: (stationName: string) => void;
+  currentMetadata?: { title: string | null; artist: string | null } | null;
 }
 
-export default function Player({ station, isPlaying, onPlay, onPause }: PlayerProps) {
+export default function Player({ 
+  station, 
+  isPlaying, 
+  onPlay, 
+  onPause,
+  onToggleMute,
+  onExitFullscreen,
+  recentStations = [],
+  onNextStation,
+  onPreviousStation,
+  onPlayStation,
+  currentMetadata,
+}: PlayerProps) {
+  // recentStations is available for future use (e.g., showing next/prev station preview)
+  if (false) void recentStations;
   const audioRef = useRef<HTMLAudioElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const isInitializingRef = useRef(false);
@@ -606,6 +630,93 @@ export default function Player({ station, isPlaying, onPlay, onPause }: PlayerPr
     };
   }, [isPlaying, onPlay, onPause]);
 
+  // Gesture controls for fullscreen
+  const fullscreenGestures = useGestureControls({
+    onSwipeDown: () => {
+      if (isFullscreen && onExitFullscreen) {
+        setIsFullscreen(false);
+        onExitFullscreen();
+      }
+    },
+    onTwoFingerTap: () => {
+      setIsMuted(!isMuted);
+      if (onToggleMute) {
+        onToggleMute();
+      }
+    },
+    isFullscreen,
+    enabled: isFullscreen,
+  });
+
+  // Voice control with Gemini audio understanding
+  useEffect(() => {
+    const voiceControl = getVoiceControl();
+    
+    if (!voiceControl.isSupported()) {
+      return;
+    }
+
+    voiceControl.start({
+      onCommand: async (command) => {
+        try {
+          // Command is already parsed by Gemini from audio
+          // Execute the command directly
+          switch (command.type) {
+            case 'play':
+              if (command.stationName && onPlayStation) {
+                onPlayStation(command.stationName);
+                speakResponse(`Playing ${command.stationName}`);
+              }
+              break;
+            case 'next':
+              if (onNextStation) {
+                onNextStation();
+                speakResponse('Next station');
+              }
+              break;
+            case 'previous':
+              if (onPreviousStation) {
+                onPreviousStation();
+                speakResponse('Previous station');
+              }
+              break;
+            case 'volume_up':
+              setVolume((v) => Math.min(1, v + 0.1));
+              speakResponse('Volume up');
+              break;
+            case 'volume_down':
+              setVolume((v) => Math.max(0, v - 0.1));
+              speakResponse('Volume down');
+              break;
+            case 'mute':
+              setIsMuted(true);
+              speakResponse('Muted');
+              break;
+            case 'unmute':
+              setIsMuted(false);
+              speakResponse('Unmuted');
+              break;
+            case 'whats_playing':
+              if (currentMetadata || metadata) {
+                const meta = currentMetadata || metadata;
+                speakResponse(`Now playing: ${meta?.title || 'Unknown'} by ${meta?.artist || 'Unknown Artist'}`);
+              }
+              break;
+          }
+        } catch (error) {
+          console.error('Voice command error:', error);
+        }
+      },
+      onError: (error) => {
+        console.error('Voice control error:', error);
+      },
+    });
+
+    return () => {
+      voiceControl.stop();
+    };
+  }, [onNextStation, onPreviousStation, onPlayStation, onToggleMute, currentMetadata, metadata]);
+
   // Update MediaSession metadata whenever station, metadata, or artwork changes
   useEffect(() => {
     if (!('mediaSession' in navigator)) return;
@@ -1131,7 +1242,13 @@ export default function Player({ station, isPlaying, onPlay, onPause }: PlayerPr
       <AnimatePresence>
         {isFullscreen && (
           <motion.div
-            ref={fullscreenRef}
+            ref={(el) => {
+              fullscreenRef.current = el;
+              fullscreenGestures.setContainerRef(el);
+            }}
+            onTouchStart={fullscreenGestures.onTouchStart}
+            onTouchMove={fullscreenGestures.onTouchMove}
+            onTouchEnd={fullscreenGestures.onTouchEnd}
             initial={{ opacity: 0 }}
             animate={{ 
               opacity: 1,

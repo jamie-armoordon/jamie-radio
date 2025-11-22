@@ -9,10 +9,13 @@ import Player from './components/Player';
 import { Search, Wifi, Clock, Settings } from 'lucide-react';
 import { useStationHistory } from './hooks/useStationHistory';
 import { useSettingsStore } from './store/settingsStore';
+import { useGestureControls } from './hooks/useGestureControls';
 import { ThemeProvider } from './components/ThemeProvider';
 import SettingsPanel from './components/settings/SettingsPanel';
 import ClockComponent from './components/Clock';
 import Temperature from './components/Temperature';
+import OfflineMode from './components/OfflineMode';
+import PWAInstallPrompt from './components/PWAInstallPrompt';
 
 function App() {
   const [stations, setStations] = useState<RadioStation[]>([]);
@@ -267,9 +270,57 @@ function App() {
     }
   };
 
+  // Gesture controls for station navigation (swipe left/right everywhere)
+  const handleNextStation = () => {
+    if (recentStations.length === 0) return;
+    const currentIndex = recentStations.findIndex(s => s.stationuuid === currentStation?.stationuuid);
+    const nextIndex = currentIndex >= 0 && currentIndex < recentStations.length - 1 
+      ? currentIndex + 1 
+      : 0; // Loop around
+    handleStationSelect(recentStations[nextIndex]);
+  };
+
+  const handlePreviousStation = () => {
+    if (recentStations.length === 0) return;
+    const currentIndex = recentStations.findIndex(s => s.stationuuid === currentStation?.stationuuid);
+    const prevIndex = currentIndex > 0 
+      ? currentIndex - 1 
+      : recentStations.length - 1; // Loop around
+    handleStationSelect(recentStations[prevIndex]);
+  };
+
+  const handlePlayStationByName = (stationName: string) => {
+    // Fuzzy match station name
+    const matched = stations.find(s => 
+      s.name.toLowerCase().includes(stationName.toLowerCase()) ||
+      stationName.toLowerCase().includes(s.name.toLowerCase())
+    );
+    if (matched) {
+      handleStationSelect(matched);
+    }
+  };
+
+  const appGestures = useGestureControls({
+    onSwipeLeft: handleNextStation,
+    onSwipeRight: handlePreviousStation,
+    enabled: true,
+  });
+
   return (
     <ThemeProvider currentStation={currentStation}>
-      <div className="min-h-screen bg-slate-950 text-white selection:bg-purple-500/30">
+      <PWAInstallPrompt />
+      <OfflineMode 
+        onStationSelect={handleStationSelect}
+        isPlaying={isPlaying}
+        currentStation={currentStation}
+      />
+      <div 
+        className="min-h-screen bg-slate-950 text-white selection:bg-purple-500/30"
+        onTouchStart={appGestures.onTouchStart}
+        onTouchMove={appGestures.onTouchMove}
+        onTouchEnd={appGestures.onTouchEnd}
+        ref={appGestures.setContainerRef}
+      >
       {/* Background Gradients */}
       <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
         <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-purple-900/20 rounded-full blur-[120px]" />
@@ -402,6 +453,13 @@ function App() {
             // onPause called
             setIsPlaying(false);
           }}
+          onToggleMute={() => {}}
+          onExitFullscreen={() => {}}
+          recentStations={recentStations}
+          onNextStation={handleNextStation}
+          onPreviousStation={handlePreviousStation}
+          onPlayStation={handlePlayStationByName}
+          currentMetadata={null}
         />
       </div>
       </div>
