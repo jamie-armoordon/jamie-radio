@@ -982,10 +982,10 @@ export default function Player({ station, isPlaying, onPlay, onPause }: PlayerPr
                 {!metadataError && metadata && (metadata.title || metadata.artist) && metadata.is_song ? (
                   <div className="mb-1">
                     <div className="text-white font-semibold text-sm md:text-base truncate">
-                      {station.name} — Now Playing: {metadata.title || 'Unknown Title'}
+                      {metadata.title || 'Unknown Title'}
                     </div>
                     <div className="text-white/70 text-xs md:text-sm truncate">
-                      {metadata.artist || station.name}
+                      {metadata.artist || 'Unknown Artist'}
                     </div>
                   </div>
                 ) : !metadataError && metadata && !metadata.is_song ? (
@@ -1337,10 +1337,10 @@ export default function Player({ station, isPlaying, onPlay, onPause }: PlayerPr
                 {metadata && (metadata.title || metadata.artist) && metadata.is_song ? (
                   <div className="mb-2 md:mb-3">
                     <div className="text-white font-semibold text-lg md:text-xl mb-1">
-                      {station.name} — Now Playing: {metadata.title || 'Unknown Title'}
+                      {metadata.title || 'Unknown Title'}
                     </div>
                     <div className="text-white/70 text-base md:text-lg">
-                      {metadata.artist || station.name}
+                      {metadata.artist || 'Unknown Artist'}
                     </div>
                   </div>
                 ) : metadata && !metadata.is_song ? (

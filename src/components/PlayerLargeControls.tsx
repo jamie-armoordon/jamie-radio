@@ -90,10 +90,10 @@ export default function PlayerLargeControls({
         {metadata && (metadata.title || metadata.artist) && metadata.is_song ? (
           <>
             <div className="text-white font-semibold text-2xl md:text-3xl mb-2">
-              {station.name} — Now Playing: {metadata.title || 'Unknown Title'}
+              {metadata.title || 'Unknown Title'}
             </div>
             <div className="text-white/70 text-xl md:text-2xl mb-4">
-              {metadata.artist || station.name}
+              {metadata.artist || 'Unknown Artist'}
             </div>
           </>
         ) : null}
