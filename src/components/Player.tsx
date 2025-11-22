@@ -512,61 +512,66 @@ export default function Player({ station, isPlaying, onPlay, onPause }: PlayerPr
     };
   }, []);
 
+  // Helper function to update MediaSession metadata
+  const updateMediaSessionMetadata = (
+    station: RadioStation | null,
+    metadata: { title: string | null; artist: string | null; artwork_url: string | null; is_song: boolean } | null,
+    logoSrc: string | null
+  ) => {
+    if (!('mediaSession' in navigator) || !station) return;
+
+    const mediaSession = navigator.mediaSession;
+    const artwork: MediaImage[] = [];
+
+    // Use artwork proxy for iOS compatibility
+    if (metadata?.artwork_url) {
+      artwork.push({
+        src: `/api/artwork?url=${encodeURIComponent(metadata.artwork_url)}`,
+        sizes: '512x512',
+        type: 'image/png',
+      });
+    } else if (logoSrc) {
+      artwork.push({
+        src: logoSrc,
+        sizes: '512x512',
+        type: 'image/png',
+      });
+    } else {
+      // Fallback to app logo
+      artwork.push({
+        src: '/logo.png',
+        sizes: '512x512',
+        type: 'image/png',
+      });
+    }
+
+    // Format: <StationName> — Now Playing: <TrackTitle>
+    let title: string;
+    let artist: string;
+
+    if (metadata?.is_song && metadata.title) {
+      title = `${station.name} — Now Playing: ${metadata.title}`;
+      artist = metadata.artist || station.name;
+    } else {
+      title = station.name;
+      artist = 'Live Radio';
+    }
+
+    mediaSession.metadata = new MediaMetadata({
+      title,
+      artist,
+      album: station.name,
+      artwork,
+    });
+  };
+
   // MediaSession API for iOS metadata support
   useEffect(() => {
     if (!('mediaSession' in navigator)) return;
 
     const mediaSession = navigator.mediaSession;
-    
-    if (station && metadata) {
-      // Set metadata
-      const artwork: MediaImage[] = [];
-      
-      // Add album artwork if available
-      if (metadata.artwork_url) {
-        artwork.push({
-          src: `/api/artwork?url=${encodeURIComponent(metadata.artwork_url)}`,
-          sizes: '512x512',
-          type: 'image/jpeg',
-        });
-      } else if (logoSrc) {
-        // Fallback to station logo
-        artwork.push({
-          src: logoSrc,
-          sizes: '512x512',
-          type: 'image/png',
-        });
-      }
 
-      mediaSession.metadata = new MediaMetadata({
-        title: metadata.is_song && metadata.title 
-          ? metadata.title 
-          : station.name,
-        artist: metadata.is_song && metadata.artist 
-          ? metadata.artist 
-          : 'Live Radio',
-        album: metadata.is_song ? station.name : undefined,
-        artwork,
-      });
-    } else if (station) {
-      // Set basic metadata if no track info available
-      const artwork: MediaImage[] = [];
-      if (logoSrc) {
-        artwork.push({
-          src: logoSrc,
-          sizes: '512x512',
-          type: 'image/png',
-        });
-      }
-
-      mediaSession.metadata = new MediaMetadata({
-        title: station.name,
-        artist: 'Live Radio',
-        artwork,
-      });
-    }
-
-    // Set action handlers
+    // Set action handlers (only set once, not on every render)
     mediaSession.setActionHandler('play', () => {
       if (!isPlaying) {
         onPlay();
@@ -579,20 +584,42 @@ export default function Player({ station, isPlaying, onPlay, onPause }: PlayerPr
       }
     });
 
+    mediaSession.setActionHandler('stop', () => {
+      if (isPlaying) {
+        onPause();
+      }
+    });
+
+    // Disable unused actions for radio context
+    mediaSession.setActionHandler('previoustrack', null);
+    mediaSession.setActionHandler('nexttrack', null);
+
+    return () => {
+      // Cleanup handlers on unmount
+      try {
+        mediaSession.setActionHandler('play', null);
+        mediaSession.setActionHandler('pause', null);
+        mediaSession.setActionHandler('stop', null);
+      } catch (e) {
+        // Ignore errors during cleanup
+      }
+    };
+  }, [isPlaying, onPlay, onPause]);
+
+  // Update MediaSession metadata whenever station, metadata, or artwork changes
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return;
+
+    updateMediaSessionMetadata(station, metadata, logoSrc);
+
     // Update playback state
+    const mediaSession = navigator.mediaSession;
     if (isPlaying) {
       mediaSession.playbackState = 'playing';
     } else {
       mediaSession.playbackState = 'paused';
     }
-
-    return () => {
-      // Cleanup
-      if (mediaSession.metadata) {
-        mediaSession.metadata = null;
-      }
-    };
-  }, [station, metadata, logoSrc, isPlaying, onPlay, onPause]);
+  }, [station, metadata, logoSrc, isPlaying]);
 
   // Reconnect with exponential backoff
   const attemptReconnect = () => {
@@ -955,10 +982,10 @@ export default function Player({ station, isPlaying, onPlay, onPause }: PlayerPr
                 {!metadataError && metadata && (metadata.title || metadata.artist) && metadata.is_song ? (
                   <div className="mb-1">
                     <div className="text-white font-semibold text-sm md:text-base truncate">
-                      {metadata.title || 'Unknown Title'}
+                      {station.name} — Now Playing: {metadata.title || 'Unknown Title'}
                     </div>
                     <div className="text-white/70 text-xs md:text-sm truncate">
-                      {metadata.artist || 'Unknown Artist'}
+                      {metadata.artist || station.name}
                     </div>
                   </div>
                 ) : !metadataError && metadata && !metadata.is_song ? (
@@ -1041,9 +1068,21 @@ export default function Player({ station, isPlaying, onPlay, onPause }: PlayerPr
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={(e) => {
+                onClick={async (e) => {
                   e.stopPropagation();
                   triggerHaptic();
+                  
+                  // iOS autoplay unlock - ensure audio context is ready
+                  const audio = audioRef.current;
+                  if (audio && audio.paused) {
+                    try {
+                      await audio.play();
+                      audio.pause();
+                    } catch {
+                      // Ignore autoplay errors
+                    }
+                  }
+                  
                   if (isPlaying) {
                     onPause();
                   } else {
@@ -1298,10 +1337,10 @@ export default function Player({ station, isPlaying, onPlay, onPause }: PlayerPr
                 {metadata && (metadata.title || metadata.artist) && metadata.is_song ? (
                   <div className="mb-2 md:mb-3">
                     <div className="text-white font-semibold text-lg md:text-xl mb-1">
-                      {metadata.title || 'Unknown Title'}
+                      {station.name} — Now Playing: {metadata.title || 'Unknown Title'}
                     </div>
                     <div className="text-white/70 text-base md:text-lg">
-                      {metadata.artist || 'Unknown Artist'}
+                      {metadata.artist || station.name}
                     </div>
                   </div>
                 ) : metadata && !metadata.is_song ? (

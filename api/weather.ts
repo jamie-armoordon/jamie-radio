@@ -19,8 +19,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   try {
+    // Get coordinates from query params (required)
+    const lat = req.query.lat ? Number.parseFloat(req.query.lat as string) : null;
+    const lon = req.query.lon ? Number.parseFloat(req.query.lon as string) : null;
+    const locationName = req.query.city ? (req.query.city as string) : 'Unknown Location';
+
+    // Validate coordinates are provided
+    if (lat === null || lon === null || Number.isNaN(lat) || Number.isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+      throw new Error('Invalid or missing coordinates');
+    }
+
     // Use open-meteo.com free weather API (no API key required)
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${TONBRIDGE_LAT}&longitude=${TONBRIDGE_LON}&current=temperature_2m,weather_code&timezone=Europe/London`;
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&timezone=auto`;
     
     const response = await fetch(url, {
       headers: {
@@ -70,16 +80,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const result: WeatherResponse = {
       temperature,
-      location: 'Tonbridge, UK',
+      location: locationName,
       condition: conditionMap[weatherCode] || 'Unknown',
     };
 
     return res.status(200).json(result);
   } catch (error) {
     console.error('[Weather API] Error:', error);
+    const locationName = req.query.city ? (req.query.city as string) : 'Unknown Location';
     return res.status(500).json({
       temperature: null,
-      location: 'Tonbridge, UK',
+      location: locationName,
       error: 'Failed to fetch weather',
     });
   }

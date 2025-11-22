@@ -4,10 +4,17 @@ import { persist, subscribeWithSelector } from 'zustand/middleware';
 export type Theme = 'light' | 'dark' | 'oled' | 'dynamic';
 export type StartupView = 'home' | 'favourites' | 'largeControls';
 export type EqPreset = 'flat' | 'bass' | 'treble' | 'voice';
+export type LocationPermission = 'unknown' | 'granted' | 'denied';
 
 interface AudioSettings {
   eqPreset: EqPreset;
   normalizationEnabled: boolean;
+}
+
+interface FallbackLocation {
+  city: string;
+  lat: number | null;
+  lon: number | null;
 }
 
 interface SettingsState {
@@ -17,6 +24,9 @@ interface SettingsState {
   autoplayLastStation: boolean;
   startupView: StartupView;
   audio: AudioSettings;
+  useDeviceLocation: boolean;
+  fallbackLocation: FallbackLocation;
+  locationPermission: LocationPermission;
 }
 
 interface SettingsActions {
@@ -27,6 +37,9 @@ interface SettingsActions {
   setStartupView: (view: StartupView) => void;
   setEqPreset: (preset: EqPreset) => void;
   toggleNormalization: () => void;
+  setUseDeviceLocation: (value: boolean) => void;
+  setFallbackLocation: (city: string, lat: number | null, lon: number | null) => void;
+  setLocationPermission: (status: LocationPermission) => void;
 }
 
 type SettingsStore = SettingsState & SettingsActions;
@@ -41,6 +54,13 @@ const defaultState: SettingsState = {
     eqPreset: 'flat',
     normalizationEnabled: false,
   },
+  useDeviceLocation: true,
+  fallbackLocation: {
+    city: '',
+    lat: null,
+    lon: null,
+  },
+  locationPermission: 'unknown',
 };
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -57,6 +77,16 @@ export const useSettingsStore = create<SettingsStore>()(
         set((state) => ({
           audio: { ...state.audio, normalizationEnabled: !state.audio.normalizationEnabled },
         })),
+      setUseDeviceLocation: (value) => set({ useDeviceLocation: value }),
+      setFallbackLocation: (city, lat, lon) =>
+        set({
+          fallbackLocation: {
+            city,
+            lat,
+            lon,
+          },
+        }),
+      setLocationPermission: (status) => set({ locationPermission: status }),
     })),
     {
       name: 'jamie_radio_settings',
@@ -67,6 +97,9 @@ export const useSettingsStore = create<SettingsStore>()(
         autoplayLastStation: state.autoplayLastStation,
         startupView: state.startupView,
         audio: state.audio,
+        useDeviceLocation: state.useDeviceLocation,
+        fallbackLocation: state.fallbackLocation,
+        locationPermission: state.locationPermission,
       }),
     }
   )

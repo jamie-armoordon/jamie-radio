@@ -1,5 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
+import { useState, useEffect } from 'react';
 import { useSettingsStore, type Theme, type StartupView, type EqPreset } from '../../store/settingsStore';
 
 interface SettingsPanelProps {
@@ -15,6 +16,9 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
     autoplayLastStation,
     startupView,
     audio,
+    useDeviceLocation,
+    fallbackLocation,
+    locationPermission,
     setTheme,
     toggleVisualizer,
     toggleLargeControls,
@@ -22,7 +26,51 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
     setStartupView,
     setEqPreset,
     toggleNormalization,
+    setUseDeviceLocation,
+    setFallbackLocation,
+    setLocationPermission,
   } = useSettingsStore();
+
+  const [manualCity, setManualCity] = useState(fallbackLocation.city);
+  const [manualLat, setManualLat] = useState(fallbackLocation.lat?.toString() || '');
+  const [manualLon, setManualLon] = useState(fallbackLocation.lon?.toString() || '');
+  const [isGeocoding, setIsGeocoding] = useState(false);
+
+  // Sync manual inputs when fallbackLocation changes externally
+  useEffect(() => {
+    setManualCity(fallbackLocation.city);
+    setManualLat(fallbackLocation.lat?.toString() || '');
+    setManualLon(fallbackLocation.lon?.toString() || '');
+  }, [fallbackLocation]);
+
+  // Geocode city name to get coordinates
+  const geocodeCity = async (cityName: string): Promise<{ lat: number; lon: number } | null> => {
+    try {
+      // Use OpenStreetMap Nominatim API (free, no API key required)
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(cityName)}&limit=1`,
+        {
+          headers: {
+            'User-Agent': 'JamieRadio/1.0',
+          },
+        }
+      );
+
+      if (!response.ok) return null;
+
+      const data = await response.json();
+      if (data && data.length > 0) {
+        return {
+          lat: Number.parseFloat(data[0].lat),
+          lon: Number.parseFloat(data[0].lon),
+        };
+      }
+      return null;
+    } catch (error) {
+      console.error('Geocoding error:', error);
+      return null;
+    }
+  };
 
   const themes: { value: Theme; label: string }[] = [
     { value: 'light', label: 'Light' },
@@ -209,7 +257,7 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
               </div>
 
               {/* Normalization Toggle */}
-              <div className="mb-4">
+              <div className="mb-8">
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="text-lg font-semibold text-white mb-1">Volume Normalization</h3>
@@ -227,6 +275,139 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                       transition={{ type: 'spring', stiffness: 500, damping: 30 }}
                       className="absolute top-1 left-1 w-6 h-6 bg-white rounded-full shadow-lg"
                     />
+                  </button>
+                </div>
+              </div>
+
+              {/* Location & Weather Section */}
+              <div className="mb-4">
+                <h3 className="text-lg font-semibold text-white mb-4">Location & Weather</h3>
+
+                {/* Use Device Location Toggle */}
+                <div className="mb-6">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <h4 className="text-base font-semibold text-white mb-1">Use Device Location</h4>
+                      <p className="text-sm text-white/60">Automatically detect your location for weather</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const newValue = !useDeviceLocation;
+                        setUseDeviceLocation(newValue);
+                        if (newValue && locationPermission === 'unknown') {
+                          // Request permission when toggling on
+                          if (navigator.geolocation) {
+                            navigator.geolocation.getCurrentPosition(
+                              (position) => {
+                                setFallbackLocation(
+                                  fallbackLocation.city,
+                                  position.coords.latitude,
+                                  position.coords.longitude
+                                );
+                                setLocationPermission('granted');
+                              },
+                              () => {
+                                setLocationPermission('denied');
+                              }
+                            );
+                          }
+                        }
+                      }}
+                      disabled={locationPermission === 'denied'}
+                      className={`
+                        relative w-14 h-8 rounded-full transition-colors
+                        ${useDeviceLocation && locationPermission !== 'denied' ? 'bg-purple-500' : 'bg-white/20'}
+                        ${locationPermission === 'denied' ? 'opacity-50 cursor-not-allowed' : ''}
+                      `}
+                    >
+                      <motion.div
+                        animate={{ x: useDeviceLocation && locationPermission !== 'denied' ? 24 : 0 }}
+                        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                        className="absolute top-1 left-1 w-6 h-6 bg-white rounded-full shadow-lg"
+                      />
+                    </button>
+                  </div>
+
+                  {/* Permission Status */}
+                  {locationPermission === 'denied' && (
+                    <div className="mt-2 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
+                      <p className="text-sm text-yellow-400/80">
+                        Location permission denied. Enable location in your browser settings to use automatic location.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Manual Fallback Location */}
+                <div className="space-y-3">
+                  <h4 className="text-base font-semibold text-white">Manual Fallback Location</h4>
+                  
+                  <div>
+                    <label className="block text-sm text-white/70 mb-1">City</label>
+                    <input
+                      type="text"
+                      value={manualCity}
+                      onChange={(e) => setManualCity(e.target.value)}
+                      className="w-full px-4 py-2 rounded-xl border-2 border-white/10 bg-white/5 text-white focus:outline-none focus:border-purple-500 focus:bg-white/10"
+                      placeholder="City name"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm text-white/70 mb-1">Latitude</label>
+                      <input
+                        type="number"
+                        step="any"
+                        value={manualLat}
+                        onChange={(e) => setManualLat(e.target.value)}
+                        className="w-full px-4 py-2 rounded-xl border-2 border-white/10 bg-white/5 text-white focus:outline-none focus:border-purple-500 focus:bg-white/10"
+                        placeholder="51.1967"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm text-white/70 mb-1">Longitude</label>
+                      <input
+                        type="number"
+                        step="any"
+                        value={manualLon}
+                        onChange={(e) => setManualLon(e.target.value)}
+                        className="w-full px-4 py-2 rounded-xl border-2 border-white/10 bg-white/5 text-white focus:outline-none focus:border-purple-500 focus:bg-white/10"
+                        placeholder="0.2733"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={async () => {
+                      let lat = manualLat ? Number.parseFloat(manualLat) : null;
+                      let lon = manualLon ? Number.parseFloat(manualLon) : null;
+                      const cityName = manualCity || '';
+
+                      // If city is provided but no coordinates, geocode it
+                      if (cityName && (lat === null || lon === null || Number.isNaN(lat) || Number.isNaN(lon))) {
+                        setIsGeocoding(true);
+                        const coords = await geocodeCity(cityName);
+                        if (coords) {
+                          lat = coords.lat;
+                          lon = coords.lon;
+                          setManualLat(lat.toString());
+                          setManualLon(lon.toString());
+                        } else {
+                          alert('Could not find coordinates for that city. Please enter coordinates manually.');
+                          setIsGeocoding(false);
+                          return;
+                        }
+                        setIsGeocoding(false);
+                      }
+
+                      setFallbackLocation(cityName, lat, lon);
+                      // Temperature component will auto-refresh via useEffect
+                    }}
+                    disabled={isGeocoding}
+                    className="w-full px-4 py-3 rounded-xl bg-purple-500 hover:bg-purple-600 text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isGeocoding ? 'Looking up location...' : 'Save Location'}
                   </button>
                 </div>
               </div>
