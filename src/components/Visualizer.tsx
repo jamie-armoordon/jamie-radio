@@ -78,7 +78,7 @@ export default function Visualizer({ audioElement, enabled }: VisualizerProps) {
 
         animationFrameRef.current = requestAnimationFrame(draw);
 
-        analyserRef.current.getByteFrequencyData(dataArrayRef.current);
+        analyserRef.current.getByteFrequencyData(dataArrayRef.current as Uint8Array);
 
         const width = canvas.width / window.devicePixelRatio;
         const height = canvas.height / window.devicePixelRatio;
