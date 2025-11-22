@@ -11,7 +11,7 @@ export default function Visualizer({ audioElement, enabled }: VisualizerProps) {
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
-  const dataArrayRef = useRef<Uint8Array | null>(null);
+  const bufferLengthRef = useRef<number>(0);
 
   useEffect(() => {
     if (!enabled || !audioElement) {
@@ -68,17 +68,17 @@ export default function Visualizer({ audioElement, enabled }: VisualizerProps) {
       source.connect(analyser);
       analyser.connect(audioContext.destination);
 
-      const bufferLength = analyser.frequencyBinCount;
-      const dataArray = new Uint8Array(bufferLength);
-      dataArrayRef.current = dataArray;
+      bufferLengthRef.current = analyser.frequencyBinCount;
 
       // Draw function
       const draw = () => {
-        if (!enabled || !analyserRef.current || !dataArrayRef.current) return;
+        if (!enabled || !analyserRef.current) return;
 
         animationFrameRef.current = requestAnimationFrame(draw);
 
-        analyserRef.current.getByteFrequencyData(dataArrayRef.current as Uint8Array);
+        // Create array inline to ensure correct type
+        const dataArray = new Uint8Array(bufferLengthRef.current);
+        analyserRef.current.getByteFrequencyData(dataArray);
 
         const width = canvas.width / window.devicePixelRatio;
         const height = canvas.height / window.devicePixelRatio;
@@ -91,8 +91,8 @@ export default function Visualizer({ audioElement, enabled }: VisualizerProps) {
         const barGap = barWidth * 0.1;
 
         for (let i = 0; i < barCount; i++) {
-          const dataIndex = Math.floor((i / barCount) * dataArrayRef.current.length);
-          const value = dataArrayRef.current[dataIndex];
+          const dataIndex = Math.floor((i / barCount) * dataArray.length);
+          const value = dataArray[dataIndex];
           const barHeight = (value / 255) * height * 0.8;
 
           // Gradient colors
