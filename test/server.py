@@ -1,19 +1,12 @@
 """
 FastAPI WebSocket server for real-time wake word detection.
 Optimized for low latency.
-Also includes MARS5 TTS endpoint for local text-to-speech.
 """
 import asyncio
 import json
 import numpy as np
-import torch
-import librosa
-import io
-import base64
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
 from openwakeword import Model
 import logging
 import os
@@ -42,10 +35,6 @@ HIGH_THRESHOLD = 0.5  # Higher threshold for single-chunk detection (strong dete
 
 # Initialize wake word model (shared across connections)
 wake_model = None
-mars5_model = None
-mars5_config = None
-mars5_ref_audio = None
-mars5_ref_transcript = None
 
 def get_model():
     """Lazy initialization of the wake word model"""
@@ -58,34 +47,6 @@ def get_model():
         )
         logger.info("Model initialized")
     return wake_model
-
-def get_mars5_model():
-    """Lazy initialization of the MARS5 TTS model"""
-    global mars5_model, mars5_config, mars5_ref_audio, mars5_ref_transcript
-    if mars5_model is None:
-        try:
-            logger.info("Initializing MARS5 TTS model...")
-            mars5_model, mars5_config = torch.hub.load('Camb-ai/mars5-tts', 'mars5_english', trust_repo=True)
-            logger.info("MARS5 model loaded successfully")
-            
-            # Load reference audio for radio DJ voice
-            # Try to find reference audio file, or use a default
-            ref_audio_path = os.path.join(os.path.dirname(__file__), 'reference_audio.wav')
-            if not os.path.exists(ref_audio_path):
-                logger.warning(f"Reference audio not found at {ref_audio_path}, MARS5 TTS will use shallow clone")
-                mars5_ref_audio = None
-                mars5_ref_transcript = None
-            else:
-                wav, sr = librosa.load(ref_audio_path, sr=mars5_model.sr, mono=True)
-                mars5_ref_audio = torch.from_numpy(wav)
-                # Default transcript for radio DJ voice
-                mars5_ref_transcript = "Welcome to the radio. This is your host speaking."
-                logger.info(f"Reference audio loaded: {len(mars5_ref_audio)} samples at {sr}Hz")
-        except Exception as e:
-            logger.error(f"Failed to initialize MARS5 model: {e}")
-            logger.error("MARS5 TTS will not be available. Install dependencies: pip install torch torchaudio librosa vocos encodec safetensors regex")
-            mars5_model = False  # Mark as failed
-    return mars5_model, mars5_config, mars5_ref_audio, mars5_ref_transcript
 
 @app.get("/")
 async def root():
@@ -100,157 +61,6 @@ async def root():
 async def health():
     """Health check endpoint"""
     return {"status": "healthy"}
-
-class TTSRequest(BaseModel):
-    text: str
-    deep_clone: bool = False  # Default to shallow clone for low latency (set True for better quality with reference audio)
-
-@app.post("/tts")
-async def tts_endpoint(request: TTSRequest):
-    """
-    MARS5 TTS endpoint for local text-to-speech generation.
-    
-    Request:
-    {
-        "text": "Hello, this is a test",
-        "deep_clone": false  // Optional, default false (shallow clone for low latency)
-    }
-    
-    Response:
-    {
-        "audio": "base64-encoded-audio-data",
-        "format": "wav",
-        "sample_rate": 24000
-    }
-    
-    Note: Generation may take 10-30 seconds on CPU. GPU recommended for faster generation.
-    Shallow clone (deep_clone=false) is optimized for low latency but may be slower on CPU.
-    """
-    try:
-        model, config_class, ref_audio, ref_transcript = get_mars5_model()
-        
-        if model is False or model is None:
-            raise HTTPException(
-                status_code=503,
-                detail="MARS5 TTS model not available. Please install dependencies: pip install torch torchaudio librosa vocos encodec safetensors regex"
-            )
-        
-        if not request.text or not request.text.strip():
-            raise HTTPException(status_code=400, detail="Text is required")
-        
-        logger.info(f"Generating TTS for text: {request.text[:50]}...")
-        logger.info(f"Text length: {len(request.text)} characters")
-        
-        # Determine if we should use deep clone (requires reference audio + transcript)
-        use_deep_clone = request.deep_clone and ref_audio is not None and ref_transcript
-        
-        # Configure inference for low latency (shallow clone) or high quality (deep clone)
-        if use_deep_clone:
-            # Deep clone: better quality, slower
-            cfg = config_class(
-                deep_clone=True,
-                rep_penalty_window=100,
-                top_k=100,
-                temperature=0.7,
-                freq_penalty=3
-            )
-            logger.info("Using deep clone mode (higher quality, slower)")
-        else:
-            # Shallow clone: faster, lower quality - optimized for low latency
-            # Minimal parameters for fastest generation on CPU
-            cfg = config_class(
-                deep_clone=False,
-                rep_penalty_window=30,  # Minimal for speed
-                top_k=20,  # Minimal for speed (faster convergence)
-                temperature=0.6,  # Slightly lower for faster generation
-                freq_penalty=1  # Minimal for speed
-            )
-            logger.info("Using shallow clone mode (low latency, optimized for CPU speed)")
-            logger.info("Note: Large model (~750M params) - generation may take 10-30 seconds on CPU")
-        
-        # Generate TTS with progress logging
-        import time
-        start_time = time.time()
-        logger.info("Starting TTS generation (this may take 10-30 seconds on CPU)...")
-        
-        try:
-            if use_deep_clone and ref_audio is not None:
-                # Deep clone: use reference audio and transcript
-                logger.info("Generating with deep clone (reference audio + transcript)")
-                ar_codes, output_audio = model.tts(
-                    request.text,
-                    ref_audio,
-                    ref_transcript,
-                    cfg=cfg
-                )
-            else:
-                # Shallow clone: minimal or no reference audio
-                # Use empty tensor or minimal silence for fastest generation
-                if ref_audio is not None:
-                    # Use existing reference but without transcript (shallow clone)
-                    logger.info("Generating with shallow clone (reference audio, no transcript)")
-                    ar_codes, output_audio = model.tts(
-                        request.text,
-                        ref_audio,
-                        "",  # Empty transcript for shallow clone
-                        cfg=cfg
-                    )
-                else:
-                    # No reference audio - use minimal dummy input
-                    logger.info("Generating with shallow clone (minimal reference)")
-                    dummy_ref = torch.zeros(int(model.sr * 0.1))  # 0.1 second silence (minimal)
-                    ar_codes, output_audio = model.tts(
-                        request.text,
-                        dummy_ref,
-                        "",  # Empty transcript
-                        cfg=cfg
-                    )
-            
-            generation_time = time.time() - start_time
-            logger.info(f"TTS generation completed in {generation_time:.2f} seconds")
-            
-        except Exception as gen_error:
-            generation_time = time.time() - start_time
-            logger.error(f"TTS generation failed after {generation_time:.2f} seconds: {gen_error}")
-            raise
-        
-        # Convert to numpy and ensure it's the right format
-        if isinstance(output_audio, torch.Tensor):
-            output_audio = output_audio.cpu().numpy()
-        
-        # Normalize audio to prevent clipping
-        max_val = np.abs(output_audio).max()
-        if max_val > 1.0:
-            output_audio = output_audio / max_val
-        
-        # Convert to int16 PCM
-        output_audio_int16 = (output_audio * 32767).astype(np.int16)
-        
-        # Convert to WAV bytes
-        import wave
-        wav_buffer = io.BytesIO()
-        with wave.open(wav_buffer, 'wb') as wav_file:
-            wav_file.setnchannels(1)  # Mono
-            wav_file.setsampwidth(2)  # 16-bit
-            wav_file.setframerate(model.sr)  # 24kHz
-            wav_file.writeframes(output_audio_int16.tobytes())
-        
-        wav_bytes = wav_buffer.getvalue()
-        audio_base64 = base64.b64encode(wav_bytes).decode('utf-8')
-        
-        logger.info(f"TTS generated successfully: {len(wav_bytes)} bytes")
-        
-        return JSONResponse({
-            "audio": audio_base64,
-            "format": "wav",
-            "sample_rate": int(model.sr)
-        })
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"TTS generation failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"TTS generation failed: {str(e)}")
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):

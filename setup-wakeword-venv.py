@@ -59,8 +59,6 @@ def main():
         print("[WARN] uvloop installation failed (optional, will use asyncio)")
     
     print("\n[OK] Setup complete!")
-    print("\n[INFO] MARS5 TTS dependencies included (torch, librosa, vocos, encodec, etc.)")
-    print("   First TTS generation will download ~1.2GB model files automatically")
     print(f"\n[START] To start the server, run:")
     print(f"   npm run dev:wakeword")
     print(f"   or")
