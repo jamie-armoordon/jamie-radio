@@ -489,6 +489,16 @@ export default async function handler(req: VercelRequest | any, res: VercelRespo
     
     timer.mark('audio decoded/base64 ready', { sizeKB: (audio.length * 3 / 4 / 1024).toFixed(2) });
 
+    // Validate API key
+    if (!API_KEY || API_KEY.trim().length === 0) {
+      logger.error('AI Audio API', 'API key is missing or empty');
+      return res.status(500).json({ 
+        error: 'Server configuration error',
+        command: { type: 'unknown' },
+        speak_text: 'sorry there was a server error',
+      });
+    }
+
     // Initialize Google GenAI
     const ai = new GoogleGenAI({ apiKey: API_KEY });
 
