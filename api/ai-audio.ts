@@ -4,6 +4,8 @@ import {
   createUserContent,
   createPartFromUri,
 } from '@google/genai';
+import { config } from 'dotenv';
+import { resolve } from 'path';
 import { writeFile, unlink } from 'fs/promises';
 import { join } from 'path';
 import { whisper } from 'whisper-node';
@@ -21,6 +23,9 @@ import {
 import { decodeWebmToPcm16 } from './utils/audioDecode.js';
 import { runVadOnPcm16 } from './utils/vad.js';
 import { trimPcm16ToSegments, pcm16ToWav } from './utils/wavEncoder.js';
+
+// Explicitly load .env file (in case dotenv/config wasn't loaded before dynamic import)
+config({ path: resolve(process.cwd(), '.env') });
 
 // Load API key from environment with fallback
 const API_KEY = (process.env.GOOGLE_AI_API_KEY && process.env.GOOGLE_AI_API_KEY.trim()) || 'AIzaSyDsmn62Ux5MgplmuEwgthbsYp7-G5CIR84';
