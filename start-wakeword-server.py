@@ -32,16 +32,17 @@ if os.path.exists(numpy_in_current_dir) and os.path.isdir(numpy_in_current_dir):
 
 # Add the test directory to path if server.py is there (do this BEFORE venv to check for conflicts)
 # Check both relative and absolute paths
-test_dir_rel = os.path.join(current_dir, '..', 'test')
+test_dir_rel = os.path.join(current_dir, 'test')
 test_dir_abs = os.path.join(os.path.expanduser('~'), 'Desktop', 'test')
 
 server_path = None
-if os.path.exists(os.path.join(test_dir_abs, 'server.py')):
-    server_path = test_dir_abs
+# Check current directory first (most common case)
+if os.path.exists(os.path.join(current_dir, 'server.py')):
+    server_path = current_dir
 elif os.path.exists(os.path.join(test_dir_rel, 'server.py')):
     server_path = test_dir_rel
-elif os.path.exists(os.path.join(current_dir, 'server.py')):
-    server_path = current_dir
+elif os.path.exists(os.path.join(test_dir_abs, 'server.py')):
+    server_path = test_dir_abs
 
 # Check for numpy directory in server path that could cause conflicts
 if server_path:
