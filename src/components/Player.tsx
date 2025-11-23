@@ -394,11 +394,11 @@ export default function Player({
   }, []) // Empty deps - uses refs and stable functions only
 
   // Wake word detection via WebSocket API
+  // WebSocket URL is determined at runtime based on hostname
   const {
     getDetector,
     isListening: isWakeWordListening,
   } = useWakeWordDetector({
-    wsUrl: import.meta.env.VITE_WAKE_WORD_WS_URL || "ws://localhost:8000/ws",
     onDetection: handleWakeWordDetection,
     enabled: true, // Auto-start
   })
