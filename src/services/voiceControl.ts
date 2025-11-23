@@ -35,7 +35,6 @@ export class VoiceControl {
   private transcriber: any = null; // AssemblyAI streaming transcriber
   private audioContext: AudioContext | null = null;
   private scriptProcessor: ScriptProcessorNode | null = null;
-  private accumulatedTranscript: string = '';
   private readonly ASSEMBLYAI_SAMPLE_RATE = 16000; // 16kHz target (will resample from browser's native rate)
   private bufferedAudioChunks: Float32Array[] = []; // Buffered audio from before wake word detection
   
@@ -276,7 +275,6 @@ export class VoiceControl {
     }
 
     this.isRecordingCommand = true;
-    this.accumulatedTranscript = '';
     
     // Update AI state to recording IMMEDIATELY so user knows they can speak
     // This happens before setupAssemblyAIStreaming() to give immediate feedback
@@ -412,10 +410,6 @@ export class VoiceControl {
           noTranscriptTimer = null;
         }
         logger.log('VoiceControl', `AssemblyAI transcript event (partial):`, JSON.stringify(transcript));
-        // Accumulate partial transcripts for better real-time feedback
-        if (transcript?.text) {
-          this.accumulatedTranscript = transcript.text;
-        }
       });
 
       this.transcriber.on("turn", (turn: any) => {
@@ -431,7 +425,6 @@ export class VoiceControl {
           return;
         }
 
-        this.accumulatedTranscript = raw;
         logger.log(
           "VoiceControl",
           `AssemblyAI transcript update (end_of_turn: ${turn.end_of_turn}, formatted: ${turn.turn_is_formatted}): ${raw}`
