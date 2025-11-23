@@ -22,7 +22,15 @@ import { decodeWebmToPcm16 } from './utils/audioDecode.js';
 import { runVadOnPcm16 } from './utils/vad.js';
 import { trimPcm16ToSegments, pcm16ToWav } from './utils/wavEncoder.js';
 
-const API_KEY = process.env.GOOGLE_AI_API_KEY || 'AIzaSyDsmn62Ux5MgplmuEwgthbsYp7-G5CIR84';
+// Load API key from environment with fallback
+const API_KEY = (process.env.GOOGLE_AI_API_KEY && process.env.GOOGLE_AI_API_KEY.trim()) || 'AIzaSyDsmn62Ux5MgplmuEwgthbsYp7-G5CIR84';
+
+// Debug: Log API key status (without exposing the key)
+if (!process.env.GOOGLE_AI_API_KEY || !process.env.GOOGLE_AI_API_KEY.trim()) {
+  logger.warn('AI Audio', 'GOOGLE_AI_API_KEY not set in environment, using fallback key');
+} else {
+  logger.log('AI Audio', 'Using GOOGLE_AI_API_KEY from environment');
+}
 
 /**
  * Heuristic to detect bad transcripts (assistant-intro hallucinations)
@@ -417,9 +425,9 @@ export default async function handler(req: VercelRequest | any, res: VercelRespo
 
   // Handle both Express and Vercel request formats
   if (res.setHeader) {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   }
 
   if (req.method === 'OPTIONS') {

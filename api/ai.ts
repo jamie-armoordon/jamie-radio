@@ -13,7 +13,15 @@ import {
   ToolCall,
 } from './radioTools.js';
 
-const API_KEY = process.env.GOOGLE_AI_API_KEY || 'AIzaSyDsmn62Ux5MgplmuEwgthbsYp7-G5CIR84';
+// Load API key from environment with fallback
+const API_KEY = (process.env.GOOGLE_AI_API_KEY && process.env.GOOGLE_AI_API_KEY.trim()) || 'AIzaSyDsmn62Ux5MgplmuEwgthbsYp7-G5CIR84';
+
+// Debug: Log API key status (without exposing the key)  
+if (!process.env.GOOGLE_AI_API_KEY || !process.env.GOOGLE_AI_API_KEY.trim()) {
+  console.warn('[AI] GOOGLE_AI_API_KEY not set in environment, using fallback key');
+} else {
+  console.log('[AI] Using GOOGLE_AI_API_KEY from environment');
+}
 
 export default async function handler(req: VercelRequest | any, res: VercelResponse | any) {
   res.setHeader('Access-Control-Allow-Origin', '*');

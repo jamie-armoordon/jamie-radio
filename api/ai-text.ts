@@ -14,7 +14,15 @@ import {
   ToolCall,
 } from './radioTools.js';
 
-const API_KEY = process.env.GOOGLE_AI_API_KEY || 'AIzaSyDsmn62Ux5MgplmuEwgthbsYp7-G5CIR84';
+// Load API key from environment with fallback
+const API_KEY = (process.env.GOOGLE_AI_API_KEY && process.env.GOOGLE_AI_API_KEY.trim()) || 'AIzaSyDsmn62Ux5MgplmuEwgthbsYp7-G5CIR84';
+
+// Debug: Log API key status (without exposing the key)
+if (!process.env.GOOGLE_AI_API_KEY || !process.env.GOOGLE_AI_API_KEY.trim()) {
+  logger.warn('AI Text', 'GOOGLE_AI_API_KEY not set in environment, using fallback key');
+} else {
+  logger.log('AI Text', 'Using GOOGLE_AI_API_KEY from environment');
+}
 
 /**
  * Heuristic to detect bad transcripts (assistant-intro hallucinations)
@@ -113,6 +121,16 @@ export default async function handler(req: VercelRequest | any, res: VercelRespo
     const transcribedText = text.trim();
     
     timer.mark('text received and validated');
+
+    // Validate API key
+    if (!API_KEY || API_KEY.trim().length === 0) {
+      logger.error('AI Text API', 'API key is missing or empty');
+      return res.status(500).json({ 
+        error: 'Server configuration error',
+        command: { type: 'unknown' },
+        speak_text: 'sorry there was a server error',
+      });
+    }
 
     // Initialize Google GenAI
     const ai = new GoogleGenAI({ apiKey: API_KEY });
