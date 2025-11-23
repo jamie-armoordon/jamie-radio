@@ -19,7 +19,9 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
     useDeviceLocation,
     fallbackLocation,
     locationPermission,
-    setTheme,
+    enhancedOfflineVoice,
+    aiVisualFeedback,
+        setTheme,
     toggleVisualizer,
     toggleLargeControls,
     setAutoplayLastStation,
@@ -29,12 +31,17 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
     setUseDeviceLocation,
     setFallbackLocation,
     setLocationPermission,
-  } = useSettingsStore();
+    setEnhancedOfflineVoice,
+    setAIVisualFeedback,
+      } = useSettingsStore();
 
   const [manualCity, setManualCity] = useState(fallbackLocation.city);
   const [manualLat, setManualLat] = useState(fallbackLocation.lat?.toString() || '');
   const [manualLon, setManualLon] = useState(fallbackLocation.lon?.toString() || '');
   const [isGeocoding, setIsGeocoding] = useState(false);
+  const [isDownloadingModel, setIsDownloadingModel] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [isModelReady, setIsModelReady] = useState(false);
 
   // Sync manual inputs when fallbackLocation changes externally
   useEffect(() => {
@@ -91,6 +98,46 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
     { value: 'treble', label: 'Treble' },
     { value: 'voice', label: 'Voice' },
   ];
+
+  // Check if KittenTTS model is ready
+  useEffect(() => {
+    const checkModelStatus = async () => {
+      try {
+        const { KittenEngine } = await import('../../services/engines/kittenEngine');
+        const engine = new KittenEngine();
+        const available = await engine.isAvailable();
+        setIsModelReady(available && engine.isModelDownloaded());
+      } catch (error) {
+        console.warn('[Settings] Failed to check KittenTTS model status:', error);
+        setIsModelReady(false);
+      }
+    };
+    
+    if (enhancedOfflineVoice) {
+      checkModelStatus();
+    }
+  }, [enhancedOfflineVoice]);
+
+  const handleDownloadModel = async () => {
+    try {
+      setIsDownloadingModel(true);
+      setDownloadProgress(0);
+      
+      const { KittenEngine } = await import('../../services/engines/kittenEngine');
+      const engine = new KittenEngine();
+      
+      await engine.downloadModel((progress) => {
+        setDownloadProgress(progress);
+      });
+      
+      setIsModelReady(true);
+    } catch (error) {
+      console.error('[Settings] Model download failed:', error);
+      alert('Failed to download voice model. Please try again or use Web Speech API.');
+    } finally {
+      setIsDownloadingModel(false);
+    }
+  };
 
   return (
     <AnimatePresence>
@@ -411,6 +458,105 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                   </button>
                 </div>
               </div>
+
+              {/* AI Visual Feedback Toggle */}
+              <div className="mb-8">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold text-white mb-1">AI Visual Feedback</h3>
+                    <p className="text-sm text-white/60">Show animated AI status orb and toast messages</p>
+                  </div>
+                  <button
+                    onClick={() => setAIVisualFeedback(!aiVisualFeedback)}
+                    className={`
+                      relative w-14 h-8 rounded-full transition-colors
+                      ${aiVisualFeedback ? 'bg-purple-500' : 'bg-white/20'}
+                    `}
+                  >
+                    <motion.div
+                      animate={{ x: aiVisualFeedback ? 24 : 0 }}
+                      transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                      className="absolute top-1 left-1 w-6 h-6 bg-white rounded-full shadow-lg"
+                    />
+                  </button>
+                </div>
+              </div>
+
+              {/* TTS Provider Info */}
+              <div className="mb-8">
+                <div className="mb-4">
+                  <h3 className="text-lg font-semibold text-white mb-1">Text-to-Speech</h3>
+                  <p className="text-sm text-white/60">
+                    Using Murf AI Gen 2 with professional male radio host voice (en-UK-theo).
+                  </p>
+                </div>
+              </div>
+
+              {/* Enhanced Offline Voice Section */}
+              <div className="mb-8">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="text-lg font-semibold text-white mb-1">Enhanced Offline Voice (Free)</h3>
+                    <p className="text-sm text-white/60">
+                      Downloads a small offline neural voice once, then works without Internet
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setEnhancedOfflineVoice(!enhancedOfflineVoice)}
+                    className={`
+                      relative w-14 h-8 rounded-full transition-colors
+                      ${enhancedOfflineVoice ? 'bg-purple-500' : 'bg-white/20'}
+                    `}
+                  >
+                    <motion.div
+                      animate={{ x: enhancedOfflineVoice ? 24 : 0 }}
+                      transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                      className="absolute top-1 left-1 w-6 h-6 bg-white rounded-full shadow-lg"
+                    />
+                  </button>
+                </div>
+
+                {enhancedOfflineVoice && (
+                  <div className="mt-4 p-4 bg-white/5 border border-white/10 rounded-xl">
+                    {isModelReady ? (
+                      <div className="flex items-center gap-2 text-green-400">
+                        <div className="w-2 h-2 bg-green-400 rounded-full" />
+                        <span className="text-sm font-medium">Ready for offline use</span>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <p className="text-sm text-white/70">
+                          Download the voice model (~24-25MB) to enable offline high-quality speech.
+                        </p>
+                        {isDownloadingModel ? (
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between text-sm text-white/70">
+                              <span>Downloading model...</span>
+                              <span>{Math.round(downloadProgress)}%</span>
+                            </div>
+                            <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
+                              <motion.div
+                                className="h-full bg-purple-500"
+                                initial={{ width: 0 }}
+                                animate={{ width: `${downloadProgress}%` }}
+                                transition={{ duration: 0.3 }}
+                              />
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={handleDownloadModel}
+                            className="w-full px-4 py-2 rounded-xl bg-purple-500 hover:bg-purple-600 text-white font-medium transition-colors"
+                          >
+                            Download Voice Model
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
             </div>
           </motion.div>
         </>
@@ -418,4 +564,3 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
     </AnimatePresence>
   );
 }
-

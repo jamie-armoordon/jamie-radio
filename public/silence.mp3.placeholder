@@ -1,0 +1,17 @@
+# Silence Audio File Placeholder
+
+This file should be replaced with an actual 1-second silent MP3 file.
+
+To create the silence.mp3 file:
+
+1. Use ffmpeg:
+   ```bash
+   ffmpeg -f lavfi -i anullsrc=r=44100:cl=stereo -t 1 -q:a 9 -acodec libmp3lame silence.mp3
+   ```
+
+2. Or download a silent MP3 file from a free audio resource.
+
+3. Place it in the `public/` directory as `silence.mp3`
+
+The file is used to keep the AudioContext alive when the screen locks on iOS.
+

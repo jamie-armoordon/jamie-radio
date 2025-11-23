@@ -38,6 +38,8 @@ export function useStationMetadata(stationId: string | null, stationName?: strin
     ? `/api/metadata?stationId=${encodeURIComponent(stationId)}${stationName ? `&stationName=${encodeURIComponent(stationName)}` : ''}`
     : null;
     
+  // Use stationId+stationName as key to ensure immediate re-fetch when station changes
+  // This prevents metadata fetch from hitting the previous station after a play command
   const { data, error, isLoading } = useSWR<StationMetadata>(
     url,
     fetcher,
@@ -47,6 +49,9 @@ export function useStationMetadata(stationId: string | null, stationName?: strin
       revalidateOnReconnect: true,
       errorRetryCount: 3,
       errorRetryInterval: 5000,
+      // Dedupe requests within 100ms to prevent race conditions from rapid station changes
+      // Ensures metadata always corresponds to the station just played, not a stale previous station
+      dedupingInterval: 100,
     }
   );
 
@@ -56,4 +61,3 @@ export function useStationMetadata(stationId: string | null, stationName?: strin
     error: error || null,
   };
 }
-

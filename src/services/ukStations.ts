@@ -194,10 +194,9 @@ export async function getUKStations(): Promise<RadioStation[]> {
     const allRadioBrowserStations = await fetchStations({
       countrycode: 'GB',
     });
-    console.log(`Fetched ${allRadioBrowserStations.length} stations from RadioBrowser`);
-
     // Explicitly filter for UK stations only - check both countrycode AND country name
     // RadioBrowser API sometimes returns stations with incorrect country codes
+    // Make this filter VERY strict - require explicit UK indicators
     let filtered = allRadioBrowserStations.filter(station => {
       const countrycode = (station.countrycode || '').toUpperCase();
       const country = (station.country || '').toLowerCase();
@@ -211,21 +210,36 @@ export async function getUKStations(): Promise<RadioStation[]> {
         'romania', 'switzerland', 'swiss', 'bangla', 'bangladesh', 'germany', 'france',
         'spain', 'italy', 'poland', 'netherlands', 'belgium', 'portugal', 'greece',
         'czech', 'hungary', 'austria', 'sweden', 'norway', 'denmark', 'finland',
-        'ireland', 'eire' // Ireland is separate from UK
+        'ireland', 'eire', 'usa', 'united states', 'canada', 'australia', 'new zealand'
       ];
       if (nonUKCountries.some(nonUK => country.includes(nonUK))) {
         return false;
       }
       
-      // If countrycode is GB, accept it by default (trust the countrycode)
-      // Only reject if country name explicitly says it's not UK
+      // Additional strictness: require explicit UK indicators in country name
+      // This prevents accepting stations that just happen to have GB countrycode but aren't actually UK
+      const ukIndicators = [
+        'united kingdom', 'uk', 'great britain', 'england', 'scotland', 'wales', 
+        'northern ireland', 'british'
+      ];
+      const hasUKIndicator = ukIndicators.some(indicator => country.includes(indicator));
+      
+      // STRICT: Require explicit UK country name OR empty country (trust countrycode only if country is missing)
+      // This matches the working version which filters out all RadioBrowser stations
+      // We rely primarily on the local DAB registry instead
+      if (country && country !== '' && !hasUKIndicator) {
+        return false; // Reject if country is specified but not UK
+      }
+      
+      // Only accept if:
+      // 1. Country name is empty/unknown (trust countrycode) - but this should be rare
+      // 2. Has explicit UK indicators in country name
+      // In practice, this will filter out most RadioBrowser stations, matching the working version
       return true;
     });
-    console.log(`After UK-only filter: ${filtered.length} stations`);
 
     // Filter for live stations only
     filtered = filtered.filter(station => station.lastcheckok === 1);
-    console.log(`After live filter: ${filtered.length} stations`);
 
     // Separate seasonal and regular stations for different filtering rules
     const seasonalStations: RadioStation[] = [];
@@ -245,9 +259,6 @@ export async function getUKStations(): Promise<RadioStation[]> {
     // For seasonal stations: allow lower bitrates (0+ to handle missing/unknown bitrates)
     // Seasonal stations often have incomplete metadata
     const filteredSeasonal = seasonalStations.filter(station => (station.bitrate || 0) >= 0);
-    
-    console.log(`Regular stations after bitrate filter (64+): ${filteredRegular.length}`);
-    console.log(`Seasonal stations (bitrate relaxed): ${filteredSeasonal.length}`);
 
     // For regular stations: require minimum votes (5+)
     const votedRegular = filteredRegular.filter(station => (station.votes || 0) >= 5);
@@ -255,9 +266,6 @@ export async function getUKStations(): Promise<RadioStation[]> {
     // For seasonal stations: lower vote threshold (1+) or no threshold
     // Seasonal stations may be new or have fewer votes
     const votedSeasonal = filteredSeasonal.filter(station => (station.votes || 0) >= 1);
-    
-    console.log(`Regular stations after votes filter (5+): ${votedRegular.length}`);
-    console.log(`Seasonal stations after votes filter (1+): ${votedSeasonal.length}`);
 
     // Sort regular stations by votes and limit to top 1000
     votedRegular.sort((a, b) => (b.votes || 0) - (a.votes || 0));
@@ -268,7 +276,6 @@ export async function getUKStations(): Promise<RadioStation[]> {
     
     // Combine: seasonal stations first (they're prioritized), then regular stations
     filtered = [...votedSeasonal, ...limitedRegular];
-    console.log(`Final: ${votedSeasonal.length} seasonal + ${limitedRegular.length} regular = ${filtered.length} stations`);
 
     // Manually search for specific seasonal stations that might be missed
     const manualSearches = ['Heart Xmas', 'Heart Christmas', 'Capital Xmas', 'Capital Christmas'];
@@ -292,7 +299,6 @@ export async function getUKStations(): Promise<RadioStation[]> {
                 .replace(/^_|_$/g, '');
             }
             manualStations.push(found);
-            console.log(`Manually found: ${found.name} (ID: ${found.id})`);
           }
         }
       } catch (error) {
@@ -303,6 +309,8 @@ export async function getUKStations(): Promise<RadioStation[]> {
     // Add manually found stations to the list (prioritize them)
     radioBrowserStations = [...manualStations, ...filtered];
     
+    console.log(`[getUKStations] RadioBrowser stations after filtering: ${radioBrowserStations.length}`);
+    
     // Upgrade ALL URLs to HTTPS for mixed content compliance
     radioBrowserStations = radioBrowserStations.map(station => ({
       ...station,
@@ -310,68 +318,134 @@ export async function getUKStations(): Promise<RadioStation[]> {
       url_resolved: upgradeToHttps(station.url_resolved || station.url || ''),
     }));
     
-    console.log(`Total RadioBrowser stations: ${radioBrowserStations.length} (${manualStations.length} manual + ${filtered.length} filtered)`);
   } catch (error) {
-    console.warn('Failed to fetch stations from RadioBrowser:', error);
+    console.error('[getUKStations] Failed to fetch stations from RadioBrowser:', error);
     // Continue with local registry only if RadioBrowser fails
+    radioBrowserStations = []; // Ensure it's initialized even on error
+  }
+  
+  // Ensure radioBrowserStations is initialized
+  if (!radioBrowserStations || radioBrowserStations.length === 0) {
+    console.warn('[getUKStations] No RadioBrowser stations available, will use local stations only');
+  } else {
+    console.log(`[getUKStations] RadioBrowser stations ready: ${radioBrowserStations.length}`);
   }
 
   // Step 2: Get stations from local DAB registry
-  const allLocalStations = getStationsByLocation();
+  // Wrap in timeout to prevent hanging - if it takes too long, skip local stations
+  const LOCAL_STATION_TIMEOUT = 10000; // 10 second total timeout for all local station resolution
   
-  // Filter to focus on London/Kent/National (all receivable in South East London)
-  const relevantLocalStations = allLocalStations.filter(
-    station => station.location === 'London' || 
-               station.location === 'Kent' || 
-               station.location === 'National'
-  );
+  let localStationsWithUrls: RadioStation[] = [];
+  
+  try {
+    const localStationPromise = (async () => {
+      const allLocalStations = getStationsByLocation();
+      
+      // Filter to focus on London/Kent/National (all receivable in South East London)
+      const relevantLocalStations = allLocalStations.filter(
+        station => station.location === 'London' || 
+                   station.location === 'Kent' || 
+                   station.location === 'National'
+      );
 
-  // Resolve stream URLs using dynamic discovery
-  // Process in batches to avoid rate limiting
-  const BATCH_SIZE = 10;
-  const DELAY_BETWEEN_BATCHES = 500; // 500ms delay between batches
-  
-  const localStationsWithUrls: RadioStation[] = [];
-  
-  for (let i = 0; i < relevantLocalStations.length; i += BATCH_SIZE) {
-    const batch = relevantLocalStations.slice(i, i + BATCH_SIZE);
-    
-    const batchResults = await Promise.all(
-      batch.map(async (metadata, batchIndex) => {
-        const index = i + batchIndex;
-        let resolvedUrl: string | null = null;
-        let homepage: string | undefined;
-        let favicon: string | undefined;
+      // Resolve stream URLs using dynamic discovery
+      // Process in smaller batches to avoid rate limiting and improve reliability
+      // Prioritize stations with UUIDs (faster resolution) vs discovery_id (slower search)
+      const BATCH_SIZE = 3; // Very small batch size to avoid rate limiting and timeouts
+      const DELAY_BETWEEN_BATCHES = 200; // 200ms delay between batches
+      const STREAM_RESOLUTION_TIMEOUT = 10000; // 10 second timeout per station (increased for reliability)
+      
+      // Helper to add timeout to promises
+      const withTimeout = <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
+        return Promise.race([
+          promise,
+          new Promise<T>((_, reject) => 
+            setTimeout(() => reject(new Error('Stream resolution timeout')), timeoutMs)
+          )
+        ]);
+      };
+      
+      // Separate stations with UUIDs (faster) from those without (slower search)
+      const stationsWithUuid = relevantLocalStations.filter(s => s.uuid);
+      const stationsWithoutUuid = relevantLocalStations.filter(s => !s.uuid);
+      
+      // Process UUID stations first (faster resolution), then search-based stations
+      const prioritizedStations = [...stationsWithUuid, ...stationsWithoutUuid];
+      
+      const results: RadioStation[] = [];
+      let resolvedCount = 0;
+      let failedCount = 0;
+      
+      for (let i = 0; i < prioritizedStations.length; i += BATCH_SIZE) {
+        const batch = prioritizedStations.slice(i, i + BATCH_SIZE);
+        
+        const batchResults = await Promise.all(
+          batch.map(async (metadata, batchIndex) => {
+            const index = i + batchIndex;
+            let resolvedUrl: string | null = null;
+            let homepage: string | undefined;
+            let favicon: string | undefined;
 
-        try {
-          // Use network-based discovery via StreamUrlManager
-          // Pass StationMetadata object for proper routing
-          const streamResult = await streamUrlManager.getStreamUrl(metadata);
-          if (streamResult) {
-            resolvedUrl = streamResult.url;
-            homepage = streamResult.homepage;
-            favicon = streamResult.favicon;
-          }
-        } catch (error) {
-          console.warn(`Failed to discover stream for ${metadata.name}:`, error);
+            try {
+              // Use network-based discovery via StreamUrlManager with timeout
+              // Pass StationMetadata object for proper routing
+              const streamResult = await withTimeout(
+                streamUrlManager.getStreamUrl(metadata),
+                STREAM_RESOLUTION_TIMEOUT
+              );
+              if (streamResult && streamResult.url) {
+                resolvedUrl = streamResult.url;
+                homepage = streamResult.homepage;
+                favicon = streamResult.favicon;
+                resolvedCount++;
+                console.log(`[getUKStations] Resolved stream for ${metadata.name}: ${resolvedUrl.substring(0, 50)}...`);
+              } else {
+                failedCount++;
+                console.warn(`[getUKStations] No stream URL returned for ${metadata.name}`);
+              }
+            } catch (error) {
+              // Timeout or other error - continue without stream URL
+              failedCount++;
+              console.warn(`[getUKStations] Failed to discover stream for ${metadata.name}:`, error instanceof Error ? error.message : error);
+            }
+
+            // Create station with discovered metadata - logo resolution is handled by backend /api/logo endpoint
+            return createStationFromMetadata(metadata, index, resolvedUrl || '', homepage, favicon);
+          })
+        );
+        
+        results.push(...batchResults);
+        
+        // Add delay between batches to avoid rate limiting (except for last batch)
+        if (i + BATCH_SIZE < prioritizedStations.length) {
+          await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_BATCHES));
         }
-
-        // Create station with discovered metadata - logo resolution is handled by backend /api/logo endpoint
-        return createStationFromMetadata(metadata, index, resolvedUrl || '', homepage, favicon);
+      }
+      
+      console.log(`[getUKStations] Stream resolution complete: ${resolvedCount} resolved, ${failedCount} failed, ${prioritizedStations.length - resolvedCount - failedCount} skipped`);
+      
+      return results;
+    })();
+    
+    // Race against timeout - if local station resolution takes too long, skip it
+    localStationsWithUrls = await Promise.race([
+      localStationPromise,
+      new Promise<RadioStation[]>((resolve) => {
+        setTimeout(() => {
+          console.warn('[getUKStations] Local station resolution timed out, continuing with RadioBrowser stations only');
+          resolve([]);
+        }, LOCAL_STATION_TIMEOUT);
       })
-    );
+    ]);
     
-    localStationsWithUrls.push(...batchResults);
-    
-    // Add delay between batches to avoid rate limiting (except for last batch)
-    if (i + BATCH_SIZE < relevantLocalStations.length) {
-      await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_BATCHES));
-    }
+  } catch (error) {
+    console.error('[getUKStations] Error loading local stations, continuing with RadioBrowser stations only:', error);
+    localStationsWithUrls = [];
   }
 
-  console.log(`Loaded ${localStationsWithUrls.length} stations from DAB registry with dynamic URLs`);
-
   // Step 3: Merge local registry with RadioBrowser stations
+  console.log(`[getUKStations] Merging: ${localStationsWithUrls.length} local, ${radioBrowserStations.length} RadioBrowser stations`);
+  
   // Create a map of local stations by UUID for quick lookup
   const localStationsByUuid = new Map<string, RadioStation>();
   localStationsWithUrls.forEach(station => {
@@ -393,37 +467,18 @@ export async function getUKStations(): Promise<RadioStation[]> {
   });
 
   // Then, add RadioBrowser stations that aren't already in local registry
+  let addedFromRadioBrowser = 0;
   radioBrowserStations.forEach(station => {
-    // For manual stations, be more lenient - include even without UUID if name doesn't match
-    const isManual = manualStations.some(m => m.stationuuid === station.stationuuid || m.name === station.name);
-    
     if (station.stationuuid && !seenUuids.has(station.stationuuid)) {
       // Only add if not already present in local registry
       if (!localStationsByUuid.has(station.stationuuid)) {
         combinedStations.push(station);
         seenUuids.add(station.stationuuid);
-        if (isManual) {
-          console.log(`[Merge] Added manual station: ${station.name} (UUID: ${station.stationuuid})`);
-        }
-      } else if (isManual) {
-        console.log(`[Merge] Manual station ${station.name} skipped - already in local registry`);
+        addedFromRadioBrowser++;
       }
-    } else if (isManual && !station.stationuuid) {
-      // Manual station without UUID - check by name+URL
-      const existsByName = combinedStations.some(s => 
-        s.name.toLowerCase() === station.name.toLowerCase() && s.url === station.url
-      );
-      if (!existsByName) {
-        combinedStations.push(station);
-        console.log(`[Merge] Added manual station without UUID: ${station.name}`);
-      }
-    } else if (isManual) {
-      // Manual station with UUID but was skipped - log it
-      console.log(`[Merge] Manual station ${station.name} (UUID: ${station.stationuuid}) was skipped`);
     }
   });
-
-  console.log(`Combined ${combinedStations.length} stations from local registry and RadioBrowser`);
+  console.log(`[getUKStations] Combined: ${combinedStations.length} total (${localStationsWithUrls.length} local, ${addedFromRadioBrowser} from RadioBrowser)`);
 
   // Step 4: Prioritize and sort stations
   // Priority order:
@@ -458,7 +513,6 @@ export async function getUKStations(): Promise<RadioStation[]> {
   const uniqueStations = sortedStations.filter(station => {
     // Check for duplicate UUIDs (critical for React keys)
     if (station.stationuuid && finalSeenUuids.has(station.stationuuid)) {
-      console.warn(`[Deduplication] Duplicate UUID detected: ${station.stationuuid} for ${station.name}`);
       return false;
     }
     if (station.stationuuid) {
@@ -472,17 +526,10 @@ export async function getUKStations(): Promise<RadioStation[]> {
     }
     finalSeenNameUrl.add(nameUrlKey);
     
-    // Log manual stations that pass deduplication
-    if (manualStations.some(m => m.stationuuid === station.stationuuid || m.name === station.name)) {
-      console.log(`[Deduplication] Manual station ${station.name} passed deduplication`);
-    }
-    
     return true;
   });
 
-  console.log(`Final result: ${uniqueStations.length} unique stations after deduplication`);
-  console.log(`[Logo] All logos will be resolved by backend /api/logo endpoint`);
-
+  console.log(`[getUKStations] Final unique stations: ${uniqueStations.length} (${localStationsWithUrls.length} local, ${radioBrowserStations.length} RadioBrowser)`);
+  
   return uniqueStations;
 }
-

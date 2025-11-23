@@ -17,41 +17,46 @@ export async function fetchStations(filters: StationFilters = {}): Promise<Radio
   
   // Return cached data if available and fresh
   if (stationsCache && (now - cacheTimestamp) < CACHE_DURATION) {
+    console.log(`[radioBrowser] Using cached stations (${stationsCache.length} stations)`);
     return stationsCache;
   }
 
   try {
+    console.log('[radioBrowser] Fetching stations from API...');
     // Build query parameters
     const params: Record<string, string> = {
       countrycode: filters.countrycode || 'GB',
       order: 'votes',
       limit: '6000',
       reverse: 'true',
+      hidebroken: 'true', // Filter out broken stations
     };
 
     if (filters.state) {
       params.state = filters.state;
     }
 
-    const response = await axios.get<RadioStation[]>(API_BASE_URL, { params });
+    const response = await axios.get<RadioStation[]>(API_BASE_URL, { 
+      params,
+      timeout: 10000, // 10 second timeout
+    });
     
-    // Log sample station to verify favicon field exists in API response
-    if (response.data.length > 0 && response.data[0]) {
-      const sample = response.data[0];
-      console.log(`[RadioBrowser] Sample station from API:`, {
-        name: sample.name,
-        hasFavicon: !!sample.favicon,
-        favicon: sample.favicon || 'none'
-      });
-    }
+    console.log(`[radioBrowser] Fetched ${response.data.length} stations from API`);
     
     // Cache the raw response
     stationsCache = response.data;
     cacheTimestamp = now;
 
     return stationsCache;
-  } catch (error) {
-    console.error('Error fetching stations:', error);
+  } catch (error: any) {
+    console.error('[radioBrowser] Error fetching stations:', error?.message || error);
+    
+    // If we have cached data, return it even if stale
+    if (stationsCache && stationsCache.length > 0) {
+      console.warn('[radioBrowser] Using stale cache due to API error');
+      return stationsCache;
+    }
+    
     throw error;
   }
 }
@@ -62,18 +67,14 @@ export async function getUKStations(): Promise<RadioStation[]> {
     countrycode: 'GB',
   });
 
-  console.log(`Fetched ${allStations.length} UK stations`);
-
   // Apply filters step by step
   let filtered = allStations;
 
   // Filter for live stations
   filtered = filtered.filter(station => station.lastcheckok === 1);
-  console.log(`After live filter: ${filtered.length} stations`);
 
   // Filter by minimum bitrate (320kbps+)
   filtered = filtered.filter(station => station.bitrate >= 320);
-  console.log(`After bitrate filter (320+): ${filtered.length} stations`);
 
   // Filter by location (London or Kent) - prioritize but don't exclude all others
   // Since we already filtered for UK (countrycode=GB), all stations are UK-based
@@ -94,15 +95,10 @@ export async function getUKStations(): Promise<RadioStation[]> {
     );
   });
 
-  console.log(`Found ${prioritized.length} London/Kent stations out of ${filtered.length} total UK stations`);
-
   // If we have London/Kent stations, use those; otherwise use all UK stations
   // This ensures we show stations even if location metadata is incomplete
   if (prioritized.length > 0) {
     filtered = prioritized;
-    console.log(`Using ${filtered.length} London/Kent stations`);
-  } else {
-    console.log(`No London/Kent stations found, using all ${filtered.length} UK stations`);
   }
 
   // Remove duplicates
@@ -115,7 +111,6 @@ export async function getUKStations(): Promise<RadioStation[]> {
     seen.add(key);
     return true;
   });
-  console.log(`After deduplication: ${filtered.length} stations`);
 
   return filtered;
 }
@@ -177,6 +172,8 @@ export class RadioBrowserClient {
    */
   static async resolveStream(stationName: string): Promise<StreamMetadata | null> {
     try {
+      // Use server-side /api/radiobrowser endpoint to avoid CORS issues
+      // This endpoint handles multiple RadioBrowser server fallbacks server-side
       const params = new URLSearchParams({
         action: 'search',
         name: stationName,
@@ -187,26 +184,37 @@ export class RadioBrowserClient {
         hidebroken: 'true',
       });
       
-      const response = await fetch(`/api/radiobrowser?${params.toString()}`);
+      const response = await fetch(`/api/radiobrowser?${params.toString()}`, {
+        signal: AbortSignal.timeout(5000) // 5 second timeout
+      });
       
-      if (!response.ok) return null;
+      if (!response.ok) {
+        console.warn(`[RadioBrowserClient] API returned ${response.status} for ${stationName}`);
+        return null;
+      }
       
       const data: RadioStation[] = await response.json();
-      if (!data || data.length === 0) return null;
+      if (!data || data.length === 0) {
+        console.warn(`[RadioBrowserClient] No results for ${stationName}`);
+        return null;
+      }
       
       const station = data[0];
       const url_resolved = station.url_resolved || station.url;
       
-      if (!url_resolved) return null;
+      if (!url_resolved) {
+        console.warn(`[RadioBrowserClient] No URL in result for ${stationName}`);
+        return null;
+      }
       
-      // Return full metadata
+      console.log(`[RadioBrowserClient] Found URL for ${stationName}: ${url_resolved.substring(0, 50)}...`);
       return {
         url_resolved,
         homepage: station.homepage || undefined,
         favicon: station.favicon || undefined,
       };
     } catch (error) {
-      // Silent failure - expected when backend can't reach RadioBrowser mirrors
+      console.warn(`[RadioBrowserClient] Failed to resolve stream for ${stationName}:`, error instanceof Error ? error.message : error);
       return null;
     }
   }
@@ -269,4 +277,3 @@ export async function searchStationByName(stationName: string): Promise<RadioSta
     return null;
   }
 }
-

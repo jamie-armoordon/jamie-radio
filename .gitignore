@@ -15,6 +15,14 @@ dist-ssr
 coverage
 .vercel
 
+# Python virtual environment
+wakeword-venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

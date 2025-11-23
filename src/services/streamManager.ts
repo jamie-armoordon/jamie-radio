@@ -8,6 +8,7 @@ import { searchStationByName, resolveStreamByUUID, RadioBrowserClient } from './
 import type { StationMetadata } from '../config/stations';
 import { getStationByName } from '../config/stations';
 import { parsePlaylist } from './playlistParser';
+import { Timer } from '../utils/timer';
 
 export interface StreamResult {
   url: string;
@@ -25,7 +26,10 @@ interface CachedUrl {
 }
 
 export class StreamUrlManager {
-  private cache: Map<string, CachedUrl> = new Map();
+  private cache: Map<string, CachedUrl> = new Map()
+  // Promise cache/mutex: prevent concurrent resolution for same station
+  // If multiple play commands arrive for the same station, they share the same resolution promise
+  private inFlightResolutions: Map<string, Promise<StreamResult | null>> = new Map();
   private cacheTimeout = 4 * 60 * 60 * 1000; // 4 hours
 
   /**
@@ -48,7 +52,6 @@ export class StreamUrlManager {
         .replace(/http:\/\/(media-the|vis\.media-ice)\.musicradio\.com/, 'https://media-ssl.musicradio.com')
         .replace(/^http:/, 'https:');
       if (secureUrl !== url) {
-        console.log(`[StreamManager] Upgraded Global stream URL: ${url} -> ${secureUrl}`);
       }
       return secureUrl;
     }
@@ -60,7 +63,6 @@ export class StreamUrlManager {
     // 3. Better than blocking due to mixed content
     const secureUrl = url.replace(/^http:/, 'https:');
     if (secureUrl !== url) {
-      console.log(`[StreamManager] Upgraded HTTP to HTTPS: ${url} -> ${secureUrl}`);
     }
     return secureUrl;
   }
@@ -99,13 +101,27 @@ export class StreamUrlManager {
       };
     }
 
-    let streamUrl: string | null = null;
-    let homepage: string | undefined;
-    let favicon: string | undefined;
-    let source = 'unknown';
+    // Mutex: check if resolution is already in flight for this station (prevent race conditions)
+    // If handlePlayStationByName and resolveStreamForStation are called concurrently for the same station,
+    // they will share the same resolution promise instead of double-resolving
+    const inFlight = this.inFlightResolutions.get(cacheKey);
+    if (inFlight) {
+      return inFlight; // Reuse existing promise
+    }
 
-    try {
-      // Network-based routing
+    // Create resolution promise and cache it
+    const resolutionPromise = (async (): Promise<StreamResult | null> => {
+      // Timer to measure resolution latency
+      const resolveTimer = new Timer(`resolve_${cacheKey}`);
+      resolveTimer.mark('stream resolution started');
+      
+      let streamUrl: string | null = null;
+      let homepage: string | undefined;
+      let favicon: string | undefined;
+      let source = 'unknown';
+
+      try {
+        // Network-based routing
       switch (metadata.network) {
         case 'bbc': {
           // Use direct HTTPS Akamai URLs (bypasses HTTP-only lsn.lv redirector)
@@ -116,10 +132,20 @@ export class StreamUrlManager {
               streamUrl = `https://as-hls-ww-live.akamaized.net/pool_${station.pool}/live/ww/${station.id}/${station.id}.isml/${station.id}-audio%3d96000.norewind.m3u8`;
               source = 'bbc-akamai-https';
             } else {
-              // Fallback: try to construct URL with discovery_id (may not work for all stations)
-              console.warn(`[StreamManager] No pool found for BBC station ${metadata.discovery_id}, using discovery_id directly`);
-              streamUrl = `https://as-hls-ww-live.akamaized.net/pool_904/live/ww/${metadata.discovery_id}/${metadata.discovery_id}.isml/${metadata.discovery_id}-audio%3d96000.norewind.m3u8`;
-              source = 'bbc-akamai-https-fallback';
+              // Fallback: Use RadioBrowser for stations without pool IDs (pool_904 is outdated)
+              console.warn(`[StreamManager] No pool found for BBC station ${metadata.discovery_id}, trying RadioBrowser`);
+              try {
+                const streamMetadata = await RadioBrowserClient.resolveStream(metadata.name);
+                if (streamMetadata) {
+                  streamUrl = await parsePlaylist(streamMetadata.url_resolved);
+                  if (streamUrl) {
+                    streamUrl = this.upgradeToHttps(streamUrl, metadata.network);
+                    source = 'bbc-radiobrowser-fallback';
+                  }
+                }
+              } catch (error) {
+                console.warn(`[StreamManager] RadioBrowser fallback failed for ${metadata.name}:`, error);
+              }
             }
           }
           break;
@@ -129,12 +155,40 @@ export class StreamUrlManager {
         case 'global':
         case 'other': {
           // Commercial stations: Use dynamic discovery via RadioBrowser
-          if (metadata.discovery_id) {
+          // Prioritize UUID lookup (more reliable) over discovery_id search
+          
+          console.log(`[StreamManager] Resolving stream for ${metadata.name} (network: ${metadata.network}, uuid: ${metadata.uuid || 'none'}, discovery_id: ${metadata.discovery_id || 'none'})`);
+          
+          // First: Try UUID-based lookup (most reliable)
+          if (metadata.uuid) {
             try {
+              console.log(`[StreamManager] Trying UUID lookup for ${metadata.name} (${metadata.uuid})`);
+              const streamMetadata = await resolveStreamByUUID(metadata.uuid);
+              if (streamMetadata && streamMetadata.url_resolved) {
+                let resolvedUrl = await parsePlaylist(streamMetadata.url_resolved);
+                // Upgrade insecure URLs for Global stations
+                resolvedUrl = this.upgradeToHttps(resolvedUrl, metadata.network);
+                streamUrl = resolvedUrl;
+                homepage = streamMetadata.homepage;
+                favicon = streamMetadata.favicon;
+                source = 'radio-browser-uuid';
+                console.log(`[StreamManager] UUID lookup succeeded for ${metadata.name}: ${streamUrl.substring(0, 50)}...`);
+              } else {
+                console.warn(`[StreamManager] UUID lookup returned no URL for ${metadata.name}`);
+              }
+            } catch (error) {
+              console.warn(`[StreamManager] UUID lookup failed for ${metadata.name}:`, error instanceof Error ? error.message : error);
+            }
+          }
+          
+          // Fallback: Try discovery_id search if UUID lookup failed
+          if (!streamUrl && metadata.discovery_id) {
+            try {
+              console.log(`[StreamManager] Trying discovery_id search for ${metadata.name} (${metadata.discovery_id})`);
               // Call RadioBrowserClient.resolveStream with discovery_id (search term)
               const streamMetadata = await RadioBrowserClient.resolveStream(metadata.discovery_id);
               
-              if (streamMetadata) {
+              if (streamMetadata && streamMetadata.url_resolved) {
                 // Pass the result to parsePlaylist (handles .m3u/.pls or returns as-is)
                 let resolvedUrl = await parsePlaylist(streamMetadata.url_resolved);
                 // Upgrade insecure URLs for Global stations
@@ -143,27 +197,12 @@ export class StreamUrlManager {
                 homepage = streamMetadata.homepage;
                 favicon = streamMetadata.favicon;
                 source = 'radio-browser-dynamic';
+                console.log(`[StreamManager] Discovery ID search succeeded for ${metadata.name}: ${streamUrl.substring(0, 50)}...`);
+              } else {
+                console.warn(`[StreamManager] Discovery ID search returned no URL for ${metadata.name}`);
               }
             } catch (error) {
-              // RadioBrowser dynamic discovery failed (expected when mirrors are down)
-            }
-          }
-          
-          // Fallback: Try UUID-based lookup if discovery_id fails
-          if (!streamUrl && metadata.uuid) {
-            try {
-              const streamMetadata = await resolveStreamByUUID(metadata.uuid);
-              if (streamMetadata) {
-                let resolvedUrl = await parsePlaylist(streamMetadata.url_resolved);
-                // Upgrade insecure URLs for Global stations
-                resolvedUrl = this.upgradeToHttps(resolvedUrl, metadata.network);
-                streamUrl = resolvedUrl;
-                homepage = streamMetadata.homepage;
-                favicon = streamMetadata.favicon;
-                source = 'radio-browser-uuid';
-              }
-            } catch (error) {
-              // RadioBrowser UUID lookup failed (expected when mirrors are down)
+              console.warn(`[StreamManager] Discovery ID search failed for ${metadata.name}:`, error instanceof Error ? error.message : error);
             }
           }
           
@@ -188,26 +227,38 @@ export class StreamUrlManager {
         }
       }
 
-      // Cache the result if we found a working URL
-      if (streamUrl) {
-        // Apply HTTPS upgrade to final URL (handles playlistParser returning HTTP URLs)
-        streamUrl = this.upgradeToHttps(streamUrl, metadata.network);
-        this.setInCache(cacheKey, streamUrl, source, homepage, favicon);
-        // Return stream result with metadata
-        return {
-          url: streamUrl,
-          homepage,
-          favicon,
-          source,
-        };
+        // Cache the result if we found a working URL
+        if (streamUrl) {
+          // Apply HTTPS upgrade to final URL (handles playlistParser returning HTTP URLs)
+          streamUrl = this.upgradeToHttps(streamUrl, metadata.network);
+          this.setInCache(cacheKey, streamUrl, source, homepage, favicon);
+          resolveTimer.mark('stream resolution complete', { source, urlLength: streamUrl.length });
+          // Return stream result with metadata
+          return {
+            url: streamUrl,
+            homepage,
+            favicon,
+            source,
+          };
+        }
+      } catch (error) {
+        // Error getting stream (silent - expected for some stations)
+        resolveTimer.mark('stream resolution failed', { error: error instanceof Error ? error.message : String(error) });
       }
-    } catch (error) {
-      // Error getting stream (silent - expected for some stations)
-    }
 
-    // Return null if nothing worked (NO hardcoded fallbacks)
-    // Could not discover stream URL (silent - expected for some stations)
-    return null;
+      // Return null if nothing worked (NO hardcoded fallbacks)
+      // Could not discover stream URL (silent - expected for some stations)
+      resolveTimer.mark('stream resolution no result');
+      return null;
+    })();
+
+    // Cache the promise and clean it up when done
+    this.inFlightResolutions.set(cacheKey, resolutionPromise);
+    resolutionPromise.finally(() => {
+      this.inFlightResolutions.delete(cacheKey);
+    });
+
+    return resolutionPromise;
   }
 
   /**
@@ -415,4 +466,3 @@ export class StreamUrlManager {
 
 // Export singleton instance
 export const streamUrlManager = new StreamUrlManager();
-

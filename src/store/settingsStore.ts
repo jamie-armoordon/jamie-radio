@@ -5,6 +5,7 @@ export type Theme = 'light' | 'dark' | 'oled' | 'dynamic';
 export type StartupView = 'home' | 'favourites' | 'largeControls';
 export type EqPreset = 'flat' | 'bass' | 'treble' | 'voice';
 export type LocationPermission = 'unknown' | 'granted' | 'denied';
+export type TTSProvider = 'murf'; // Only Murf AI is supported
 
 interface AudioSettings {
   eqPreset: EqPreset;
@@ -27,6 +28,9 @@ interface SettingsState {
   useDeviceLocation: boolean;
   fallbackLocation: FallbackLocation;
   locationPermission: LocationPermission;
+  enhancedOfflineVoice: boolean;
+  aiVisualFeedback: boolean;
+  ttsProvider: TTSProvider;
 }
 
 interface SettingsActions {
@@ -40,6 +44,9 @@ interface SettingsActions {
   setUseDeviceLocation: (value: boolean) => void;
   setFallbackLocation: (city: string, lat: number | null, lon: number | null) => void;
   setLocationPermission: (status: LocationPermission) => void;
+  setEnhancedOfflineVoice: (enabled: boolean) => void;
+  setAIVisualFeedback: (enabled: boolean) => void;
+  setTTSProvider: (provider: TTSProvider) => void;
 }
 
 type SettingsStore = SettingsState & SettingsActions;
@@ -61,7 +68,12 @@ const defaultState: SettingsState = {
     lon: null,
   },
   locationPermission: 'unknown',
+  enhancedOfflineVoice: false,
+  aiVisualFeedback: true,
+      ttsProvider: 'murf' as TTSProvider,
 };
+
+// No need to load API keys anymore
 
 export const useSettingsStore = create<SettingsStore>()(
   persist(
@@ -87,6 +99,15 @@ export const useSettingsStore = create<SettingsStore>()(
           },
         }),
       setLocationPermission: (status) => set({ locationPermission: status }),
+      setEnhancedOfflineVoice: (enabled) => {
+        set({ enhancedOfflineVoice: enabled });
+        // Update TTS manager
+        import('../services/ttsManager').then(({ ttsManager }) => {
+          ttsManager.setEnhancedOfflineVoice(enabled);
+        });
+      },
+      setAIVisualFeedback: (enabled) => set({ aiVisualFeedback: enabled }),
+      setTTSProvider: (provider) => set({ ttsProvider: provider }),
     })),
     {
       name: 'jamie_radio_settings',
@@ -100,8 +121,10 @@ export const useSettingsStore = create<SettingsStore>()(
         useDeviceLocation: state.useDeviceLocation,
         fallbackLocation: state.fallbackLocation,
         locationPermission: state.locationPermission,
+        enhancedOfflineVoice: state.enhancedOfflineVoice,
+        aiVisualFeedback: state.aiVisualFeedback,
+        ttsProvider: state.ttsProvider,
       }),
     }
   )
 );
-
