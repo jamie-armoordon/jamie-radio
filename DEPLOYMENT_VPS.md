@@ -159,7 +159,7 @@ This creates the production build in the `dist/` directory.
 python3 -m venv wakeword-venv
 source wakeword-venv/bin/activate
 
-# Install Python dependencies
+# Install Python dependencies (TTS dependencies removed to save disk space)
 pip install --upgrade pip
 pip install -r requirements.txt
 
@@ -169,6 +169,8 @@ pip install uvloop
 # Deactivate virtual environment
 deactivate
 ```
+
+**Note**: MARS5 TTS dependencies have been removed to save disk space (~2GB+). TTS is now handled by cloud services (Murf AI) via the Node.js API server.
 
 ---
 
