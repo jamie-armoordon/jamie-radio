@@ -53,6 +53,11 @@ export default async function handler(req: VercelRequest | any, res: VercelRespo
       userAgent: req.headers?.['user-agent'] || 'unknown',
     });
 
+    // Validate API key
+    if (!API_KEY || API_KEY.trim().length === 0) {
+      return res.status(500).json({ error: 'Server configuration error: API key missing' });
+    }
+
     const ai = new GoogleGenAI({ apiKey: API_KEY });
     const origin = getOrigin(req);
 
