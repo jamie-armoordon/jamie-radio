@@ -398,7 +398,7 @@ export default function Player({
     getDetector,
     isListening: isWakeWordListening,
   } = useWakeWordDetector({
-    wsUrl: "ws://localhost:8000/ws",
+    wsUrl: import.meta.env.VITE_WAKE_WORD_WS_URL || "ws://localhost:8000/ws",
     onDetection: handleWakeWordDetection,
     enabled: true, // Auto-start
   })
