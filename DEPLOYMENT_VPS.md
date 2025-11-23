@@ -85,17 +85,31 @@ node --version  # Should be v20.x or higher
 npm --version
 ```
 
-### 2. Install Python 3.10+
+### 2. Install Python 3.10 or 3.11 (Required)
+
+**Important**: `openwakeword` requires Python 3.10 or 3.11. Python 3.12 is not supported due to `tflite-runtime` compatibility.
 
 ```bash
-# Ubuntu 22.04 comes with Python 3.10+
+# Check current Python version
 python3 --version
 
-# If not installed
-sudo apt install -y python3 python3-pip python3-venv
+# If you have Python 3.12, install Python 3.11
+sudo apt update
+sudo apt install -y software-properties-common
+sudo add-apt-repository ppa:deadsnakes/ppa
+sudo apt update
+sudo apt install -y python3.11 python3.11-venv python3.11-dev
 
-# Install pip if needed
-sudo apt install -y python3-pip
+# Verify installation
+python3.11 --version
+
+# Install pip for Python 3.11
+curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11
+```
+
+**Note**: When creating the virtual environment, use Python 3.11:
+```bash
+python3.11 -m venv wakeword-venv
 ```
 
 ### 3. Install FFmpeg (Required for Audio Processing)
@@ -155,13 +169,22 @@ This creates the production build in the `dist/` directory.
 ### 4. Set Up Python Virtual Environment
 
 ```bash
-# Create and activate virtual environment
-python3 -m venv wakeword-venv
+# Create virtual environment with Python 3.11 (or 3.10)
+# Replace python3.11 with python3.10 if that's what you have
+python3.11 -m venv wakeword-venv
 source wakeword-venv/bin/activate
 
 # Install Python dependencies (TTS dependencies removed to save disk space)
 pip install --upgrade pip
-pip install -r requirements.txt
+
+# Install dependencies, skipping tflite-runtime (we use ONNX only)
+pip install --no-cache-dir fastapi==0.115.0 uvicorn[standard]==0.32.0 websockets==13.1 numpy==2.1.0 python-multipart==0.0.12
+pip install --no-cache-dir onnxruntime scipy scikit-learn
+pip install --no-cache-dir --no-deps openwakeword==0.5.0
+
+# Or use requirements.txt (but may try to install tflite-runtime)
+# If it fails, install manually as above
+# pip install --no-cache-dir -r requirements.txt
 
 # Optional: Install uvloop for better performance
 pip install uvloop
@@ -169,6 +192,8 @@ pip install uvloop
 # Deactivate virtual environment
 deactivate
 ```
+
+**Note**: We install `openwakeword` with `--no-deps` to avoid `tflite-runtime` (which doesn't support Python 3.12). The server uses ONNX framework, so tflite-runtime is not needed.
 
 **Note**: MARS5 TTS dependencies have been removed to save disk space (~2GB+). TTS is now handled by cloud services (Murf AI) via the Node.js API server.
 
