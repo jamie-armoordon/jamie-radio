@@ -276,6 +276,20 @@ function base64ToBytes(base64: string): Uint8Array {
 }
 
 /**
+ * Get WebSocket URL at runtime based on current hostname
+ */
+function getMurfWebSocketUrl(): string {
+  const hostname = window.location.hostname;
+  if (hostname === 'radio.jamiearmoordon.co.uk' || hostname.includes('jamiearmoordon.co.uk')) {
+    // Production: use secure WebSocket
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${hostname}/api/tts/murf-ws`;
+  }
+  // Development: use localhost
+  return 'ws://localhost:3001/api/tts/murf-ws';
+}
+
+/**
  * Connect to WebSocket proxy
  */
 async function connectWebSocket(): Promise<WebSocket> {
@@ -284,7 +298,7 @@ async function connectWebSocket(): Promise<WebSocket> {
   }
   
   return new Promise((resolve, reject) => {
-    const wsUrl = `ws://localhost:3001/api/tts/murf-ws`;
+    const wsUrl = getMurfWebSocketUrl();
     ws = new WebSocket(wsUrl);
     
     ws.onopen = () => {

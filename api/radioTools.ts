@@ -380,9 +380,30 @@ export function getOrigin(req: any): string {
   const proto = (headers['x-forwarded-proto'] as string) || 
                 (req.protocol) || 
                 'http';
-  const host = headers.host || 
-               (typeof req.get === 'function' ? req.get('host') : null) ||
-               'localhost:3001';
+  
+  // Try to get host from headers first
+  let host = headers.host || 
+             (typeof req.get === 'function' ? req.get('host') : null);
+  
+  // If still no host, try environment variable (for production)
+  if (!host) {
+    host = process.env.HOST || process.env.API_HOST;
+  }
+  
+  // Only use localhost as last resort (local development)
+  if (!host) {
+    // Check if we're actually in a local dev context
+    const nodeEnv = process.env.NODE_ENV || 'development';
+    if (nodeEnv === 'development') {
+      host = 'localhost:3001';
+    } else {
+      // Production fallback - try to infer from common headers
+      host = headers['x-forwarded-host'] || 
+             headers['x-real-host'] ||
+             'localhost:3001'; // Last resort
+    }
+  }
+  
   return `${proto}://${host}`;
 }
 
