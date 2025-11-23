@@ -1,0 +1,15 @@
+openwakeword
+pyaudio
+numpy
+fastapi
+uvicorn[standard]
+websockets
+torch>=2.0
+torchaudio
+librosa
+vocos
+encodec
+safetensors
+regex
+# uvloop - Optional, for better performance on Linux/Mac (not available on Windows)
+
