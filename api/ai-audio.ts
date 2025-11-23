@@ -22,7 +22,7 @@ import { decodeWebmToPcm16 } from './utils/audioDecode.js';
 import { runVadOnPcm16 } from './utils/vad.js';
 import { trimPcm16ToSegments, pcm16ToWav } from './utils/wavEncoder.js';
 
-const API_KEY = 'AIzaSyDsmn62Ux5MgplmuEwgthbsYp7-G5CIR84';
+const API_KEY = process.env.GOOGLE_AI_API_KEY || 'AIzaSyDsmn62Ux5MgplmuEwgthbsYp7-G5CIR84';
 
 /**
  * Heuristic to detect bad transcripts (assistant-intro hallucinations)

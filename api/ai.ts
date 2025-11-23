@@ -13,7 +13,7 @@ import {
   ToolCall,
 } from './radioTools.js';
 
-const API_KEY = 'AIzaSyDsmn62Ux5MgplmuEwgthbsYp7-G5CIR84';
+const API_KEY = process.env.GOOGLE_AI_API_KEY || 'AIzaSyDsmn62Ux5MgplmuEwgthbsYp7-G5CIR84';
 
 export default async function handler(req: VercelRequest | any, res: VercelResponse | any) {
   res.setHeader('Access-Control-Allow-Origin', '*');

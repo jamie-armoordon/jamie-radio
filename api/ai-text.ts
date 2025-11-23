@@ -14,7 +14,7 @@ import {
   ToolCall,
 } from './radioTools.js';
 
-const API_KEY = 'AIzaSyDsmn62Ux5MgplmuEwgthbsYp7-G5CIR84';
+const API_KEY = process.env.GOOGLE_AI_API_KEY || 'AIzaSyDsmn62Ux5MgplmuEwgthbsYp7-G5CIR84';
 
 /**
  * Heuristic to detect bad transcripts (assistant-intro hallucinations)
