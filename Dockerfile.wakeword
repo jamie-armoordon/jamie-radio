@@ -1,0 +1,37 @@
+# Dockerfile for iRadio Wake Word Detection Server
+# Python FastAPI server for wake word detection
+
+FROM python:3.11-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy requirements first for better caching
+COPY requirements.txt .
+
+# Install Python dependencies
+# Note: Install openwakeword with --no-deps to avoid tflite-runtime
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir fastapi==0.115.0 uvicorn[standard]==0.32.0 websockets==13.1 numpy==2.1.0 python-multipart==0.0.12 && \
+    pip install --no-cache-dir onnxruntime scipy scikit-learn && \
+    pip install --no-cache-dir --no-deps openwakeword==0.5.0 && \
+    pip install --no-cache-dir uvloop
+
+# Copy server files
+COPY server.py .
+COPY start-wakeword-server.py .
+
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"
+
+# Start the wake word server
+CMD ["python", "server.py"]
+

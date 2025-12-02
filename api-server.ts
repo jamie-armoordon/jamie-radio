@@ -13,9 +13,16 @@ import { loadCache } from './api/_utils/cache.js';
 import { Timer } from './api/_utils/timer.js';
 import { logger } from './api/_utils/logger.js';
 import VAD from 'node-vad';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 const app = express();
 const PORT = 3001;
+
+// Get directory paths for serving static files
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const distPath = path.join(__dirname, 'dist');
 
 // Create HTTP server for WebSocket support
 const server = createServer(app);
@@ -37,6 +44,14 @@ app.use(cors());
 // Increase body size limit for audio uploads (50MB)
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Serve static files from dist folder (for production)
+// Only serve if dist folder exists (production build)
+import { existsSync } from 'node:fs';
+if (existsSync(distPath)) {
+  app.use(express.static(distPath));
+  logger.log('API Server', `Serving static files from: ${distPath}`);
+}
 
 // Request logger - log all requests including /api/logo
 app.use((req, _res, next) => {
@@ -870,9 +885,17 @@ wss.on('connection', (clientWs, req) => {
   });
 });
 
-// 404 handler
-app.use((_req, res) => {
-  logger.log('API Server', `404 for: ${_req.url}`);
+// 404 handler - serve index.html for SPA routes (only if dist exists)
+app.use((req, res) => {
+  // If dist folder exists and request is not for /api, try to serve index.html for SPA routing
+  if (existsSync(distPath) && !req.url.startsWith('/api')) {
+    const indexPath = path.join(distPath, 'index.html');
+    if (existsSync(indexPath)) {
+      res.sendFile(indexPath);
+      return;
+    }
+  }
+  logger.log('API Server', `404 for: ${req.url}`);
   res.status(404).json({ error: 'Not found' });
 });
 

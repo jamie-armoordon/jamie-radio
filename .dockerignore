@@ -1,0 +1,60 @@
+# Dependencies
+node_modules
+wakeword-venv
+venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Build outputs
+dist
+build
+*.log
+logs
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Documentation
+*.md
+!README.md
+docs
+
+# Test files
+test
+tests
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+
+# Backup files
+backup_before_upgrade
+*.tar.gz
+*.zip
+
+# Other
+coverage
+.nyc_output
+.cache
+

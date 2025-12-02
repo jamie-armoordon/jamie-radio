@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 .env
+.env.*
+.env.local
+*.token
+*.key
 coverage
 .vercel
 
@@ -33,3 +37,52 @@ __pycache__/
 *.njsproj
 *.sln
 *.sw?
+
+# Archive and backup folders
+_archive/
+backup_before_upgrade/
+upgraded ai ui/
+
+# Build artifacts and compiled files
+*.js.map
+api-server.js
+*.tar.gz
+*.zip
+
+# Test outputs
+test-murf-output.wav
+*.wav
+*.mp3
+!public/silence.mp3
+
+# Temporary files
+base64.txt
+*.tmp
+*.temp
+
+# Jupyter notebooks (optional - uncomment if you want to ignore)
+# *.ipynb
+
+# Cache (keep logos.json but ignore other cache files)
+cache/*
+!cache/logos.json
+
+# Test virtual environments
+test/venv/
+test/__pycache__/
+
+# Test files and scripts
+test/test_*.py
+test/test_*.html
+test/setup_venv.bat
+test/documentation.md
+test/MARS5_SETUP.md
+test/README.md
+test/download_models.py
+test/src/
+scripts/test-*.ts
+scripts/test-*.js
+scripts/upgrade-logging.py
+
+# Migration scripts
+migrate-*.py
