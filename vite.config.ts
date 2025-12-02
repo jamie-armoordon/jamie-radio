@@ -4,7 +4,10 @@ import { VitePWA } from 'vite-plugin-pwa'
 import { viteStaticCopy } from 'vite-plugin-static-copy'
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
+  // Set base path for production builds (when served under /radio/)
+  // In development, use '/' so dev server works correctly
+  base: mode === 'production' ? '/radio/' : '/',
   plugins: [
     react(),
     viteStaticCopy({
@@ -72,7 +75,7 @@ export default defineConfig({
             },
           },
         ],
-        navigateFallback: '/index.html',
+        navigateFallback: 'index.html', // Relative to base path
         navigateFallbackDenylist: [/^\/api/, /^\/radio\/api/],
       },
     }),
@@ -173,4 +176,4 @@ export default defineConfig({
   },
   // Configure public directory for static assets
   publicDir: 'public',
-})
+}))
