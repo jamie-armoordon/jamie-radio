@@ -2,6 +2,7 @@ import { motion } from 'framer-motion';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import type { RadioStation } from '../types/station';
 import { Play, Pause, Signal } from 'lucide-react';
+import { getApiBasePath } from '../config/api';
 
 interface StationCardProps {
   station: RadioStation;
@@ -43,7 +44,7 @@ export default function StationCard({ station, isPlaying, onPlay }: StationCardP
       params.set('stationId', station.id);
     }
     
-    const logoUrl = `/api/logo?${params.toString()}`;
+    const logoUrl = `${getApiBasePath()}/logo?${params.toString()}`;
     return logoUrl;
   }, [station.name, station.homepage, station.favicon, station.id]);
   

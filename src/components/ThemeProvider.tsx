@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useSettingsStore } from '../store/settingsStore';
 import type { RadioStation } from '../types/station';
+import { getApiBasePath } from '../config/api';
 
 interface ThemeProviderProps {
   children: React.ReactNode;
@@ -28,7 +29,7 @@ export function ThemeProvider({ children, currentStation }: ThemeProviderProps) 
         if (currentStation.id) params.set('stationId', currentStation.id);
         if (currentStation.domain) params.set('discoveryId', currentStation.domain);
         if (currentStation.name) params.set('stationName', currentStation.name);
-        const logoSrc = `/api/logo?${params.toString()}`;
+        const logoSrc = `${getApiBasePath()}/logo?${params.toString()}`;
 
         // Create canvas for color extraction
         if (!canvasRef.current) {

@@ -14,6 +14,7 @@ import { useWakeWordDetector } from "../hooks/useWakeWordDetector"
 import { getVoiceControl } from "../services/voiceControl"
 import { setTTSStateChangeCallback } from "../services/voiceFeedback"
 import { logger } from "../utils/logger"
+import { getApiBasePath } from "../config/api"
 import Visualizer from "./Visualizer"
 import PlayerLargeControls from "./PlayerLargeControls"
 import AIIntegratedStatus from "./AIIntegratedStatus" // imported AI component
@@ -119,7 +120,7 @@ export default function Player({
     if (station.id) params.set("stationId", station.id)
     if (station.domain) params.set("discoveryId", station.domain)
     if (station.name) params.set("stationName", station.name)
-    return `/api/logo?${params.toString()}`
+    return `${getApiBasePath()}/logo?${params.toString()}`
   }, [station]) // <-- Updated dependency array
 
   // Station and metadata tracking (no debug logs)

@@ -152,7 +152,7 @@ function App() {
         if (station.id) params.set("stationId", station.id)
         if (station.domain) params.set("discoveryId", station.domain)
         if (station.name) params.set("stationName", station.name)
-        const logoSrc = `/api/logo?${params.toString()}`
+        const logoSrc = `${getApiBasePath()}/logo?${params.toString()}`
 
         const img = new Image()
         img.src = logoSrc

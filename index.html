@@ -2,7 +2,7 @@
 <html lang="en" class="theme-dark">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/icon-192.png" />
+    <link rel="icon" type="image/png" href="<%= import.meta.env.BASE_URL %>icon-192.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="description" content="High Quality Internet Radio" />
     <meta name="theme-color" content="#000000" />
@@ -10,12 +10,12 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="JamieRadio" />
-    <link rel="apple-touch-icon" href="/icon-512.png" />
-    <link rel="manifest" href="/manifest.json" />
+    <link rel="apple-touch-icon" href="<%= import.meta.env.BASE_URL %>icon-512.png" />
+    <link rel="manifest" href="<%= import.meta.env.BASE_URL %>manifest.json" />
     <title>Jamie Radio</title>
   </head>
   <body>
     <div id="app"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <script type="module" src="<%= import.meta.env.BASE_URL %>src/main.tsx"></script>
   </body>
 </html>

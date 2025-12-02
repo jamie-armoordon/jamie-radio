@@ -5,6 +5,7 @@ import { motion } from "framer-motion"
 import { Play, Pause, Volume2, VolumeX, Loader2 } from "lucide-react"
 import type { RadioStation } from "../types/station"
 import { useStationMetadata } from "../hooks/useStationMetadata"
+import { getApiBasePath } from "../config/api"
 import AIIntegratedStatus from "./AIIntegratedStatus" // imported AI component
 
 interface PlayerLargeControlsProps {
@@ -40,7 +41,7 @@ export default function PlayerLargeControls({
     if (station.id) params.set("stationId", station.id)
     if (station.domain) params.set("discoveryId", station.domain)
     if (station.name) params.set("stationName", station.name)
-    return `/api/logo?${params.toString()}`
+    return `${getApiBasePath()}/logo?${params.toString()}`
   }, [station]) // Updated to use station as a whole dependency
 
   if (!station) return null
