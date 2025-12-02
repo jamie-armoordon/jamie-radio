@@ -1,4 +1,5 @@
 import type { TTSEngine, SpeakOptions } from '../ttsManager';
+import { getApiBasePath } from '../../config/api';
 
 // Callback for when TTS starts/stops (for volume ducking)
 let onTTSStateChange: ((isSpeaking: boolean) => void) | null = null;
@@ -33,8 +34,6 @@ export class GoogleAITTSEngine implements TTSEngine {
       console.log('[GoogleAITTS] Requesting TTS audio for:', text);
       
       // Call API endpoint to generate TTS audio
-import { getApiBasePath } from '../../config/api';
-
       const response = await fetch(`${getApiBasePath()}/tts`, {
         method: 'POST',
         headers: {

@@ -1,5 +1,6 @@
 import axios from 'axios';
 import type { RadioStation, StationFilters } from '../types/station';
+import { getApiBasePath } from '../config/api';
 
 // RadioBrowser API calls are now handled by backend /api/radiobrowser endpoint
 // This eliminates browser network errors (ERR_NAME_NOT_RESOLVED) from appearing in console
@@ -127,8 +128,6 @@ export async function resolveStreamByUUID(uuid: string): Promise<StreamMetadata 
       uuid: uuid,
     });
     
-import { getApiBasePath } from '../config/api';
-
     const response = await fetch(`${getApiBasePath()}/radiobrowser?${params.toString()}`);
     
     if (!response.ok) return null;
@@ -240,8 +239,6 @@ export async function searchStationByName(stationName: string): Promise<RadioSta
       hidebroken: 'true',
     });
     
-import { getApiBasePath } from '../config/api';
-
     const response = await fetch(`${getApiBasePath()}/radiobrowser?${params.toString()}`);
     
     if (!response.ok) return null;

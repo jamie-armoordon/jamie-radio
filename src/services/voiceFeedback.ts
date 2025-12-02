@@ -1,4 +1,5 @@
 import { useAIStore } from '../store/aiStore';
+import { getApiBasePath } from '../config/api';
 
 // Current audio playback state - can be HTMLAudioElement or Web Audio API source
 interface WebAudioSource {
@@ -231,8 +232,6 @@ export async function speakResponse(text: string): Promise<void> {
     }
     
     // Fallback to HTTP API (sends full text, receives audio stream)
-import { getApiBasePath } from '../config/api';
-
     const response = await fetch(`${getApiBasePath()}/tts`, {
       method: 'POST',
       headers: {

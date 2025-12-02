@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Thermometer } from 'lucide-react';
 import { useSettingsStore } from '../store/settingsStore';
+import { getApiBasePath } from '../config/api';
 
 type WeatherState = 'loading' | 'getting-location' | 'location-denied' | 'unavailable' | 'ready';
 
@@ -29,8 +30,6 @@ export default function Temperature() {
       if (city) {
         params.set('city', city);
       }
-
-import { getApiBasePath } from '../config/api';
 
       const response = await fetch(`${getApiBasePath()}/weather?${params.toString()}`);
       if (response.ok) {
