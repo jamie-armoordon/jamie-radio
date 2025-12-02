@@ -17,6 +17,7 @@ import Temperature from "./components/Temperature"
 import OfflineMode from "./components/OfflineMode"
 import PWAInstallPrompt from "./components/PWAInstallPrompt"
 import Clock from "./components/Clock"
+import { getApiBasePath } from "./config/api"
 
 function App() {
   // TTS is now handled by the API, no preloading needed
@@ -127,7 +128,7 @@ function App() {
       setLoading(true)
       console.log("[App] Loading stations from API...")
 
-      const response = await fetch("/api/stations")
+      const response = await fetch(`${getApiBasePath()}/stations`)
       if (!response.ok) {
         throw new Error(`API error: ${response.status}`)
       }
@@ -316,7 +317,7 @@ function App() {
             <div className="container mx-auto px-6 py-6">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
                 <div className="flex items-center gap-3">
-                  <img src="/logo.png" alt="JamieRadio Logo" className="w-14 h-14 md:w-16 md:h-16 object-contain" />
+                  <img src={`${import.meta.env.BASE_URL}logo.png`} alt="JamieRadio Logo" className="w-14 h-14 md:w-16 md:h-16 object-contain" />
                   <div>
                     <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-white/60">
                       Jamie Radio

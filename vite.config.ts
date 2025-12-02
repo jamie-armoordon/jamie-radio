@@ -36,7 +36,31 @@ export default defineConfig(({ mode }) => ({
     }),
     VitePWA({
       registerType: 'autoUpdate',
-      manifest: {},
+      manifest: {
+        name: 'JamieRadio',
+        short_name: 'JamieRadio',
+        start_url: mode === 'production' ? '/radio/' : '/',
+        display: 'standalone',
+        orientation: 'portrait',
+        prefer_related_applications: false,
+        background_color: '#000000',
+        theme_color: '#000000',
+        description: 'High-quality UK internet radio player',
+        icons: [
+          {
+            src: mode === 'production' ? '/radio/icon-192.png' : '/icon-192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'any maskable'
+          },
+          {
+            src: mode === 'production' ? '/radio/icon-512.png' : '/icon-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any maskable'
+          }
+        ]
+      },
       includeAssets: ['icon-192.png', 'icon-512.png', 'logo.png'],
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],

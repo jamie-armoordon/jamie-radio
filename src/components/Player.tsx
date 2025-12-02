@@ -948,7 +948,7 @@ export default function Player({
     } else {
       // Fallback to app logo
       artwork.push({
-        src: "/logo.png",
+        src: `${import.meta.env.BASE_URL}logo.png`,
         sizes: "512x512",
         type: "image/png",
       })
