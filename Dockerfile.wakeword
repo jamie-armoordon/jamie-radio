@@ -15,9 +15,10 @@ COPY requirements.txt .
 
 # Install Python dependencies
 # Note: Install openwakeword with --no-deps to avoid tflite-runtime
+# tqdm is required by openwakeword but not included in its dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir fastapi==0.115.0 uvicorn[standard]==0.32.0 websockets==13.1 numpy==2.1.0 python-multipart==0.0.12 && \
-    pip install --no-cache-dir onnxruntime scipy scikit-learn && \
+    pip install --no-cache-dir onnxruntime scipy scikit-learn tqdm && \
     pip install --no-cache-dir --no-deps openwakeword==0.5.0 && \
     pip install --no-cache-dir uvloop
 
