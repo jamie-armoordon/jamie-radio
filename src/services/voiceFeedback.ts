@@ -231,7 +231,9 @@ export async function speakResponse(text: string): Promise<void> {
     }
     
     // Fallback to HTTP API (sends full text, receives audio stream)
-    const response = await fetch('/api/tts', {
+import { getApiBasePath } from '../config/api';
+
+    const response = await fetch(`${getApiBasePath()}/tts`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

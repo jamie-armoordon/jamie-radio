@@ -127,7 +127,9 @@ export async function resolveStreamByUUID(uuid: string): Promise<StreamMetadata 
       uuid: uuid,
     });
     
-    const response = await fetch(`/api/radiobrowser?${params.toString()}`);
+import { getApiBasePath } from '../config/api';
+
+    const response = await fetch(`${getApiBasePath()}/radiobrowser?${params.toString()}`);
     
     if (!response.ok) return null;
     
@@ -238,7 +240,9 @@ export async function searchStationByName(stationName: string): Promise<RadioSta
       hidebroken: 'true',
     });
     
-    const response = await fetch(`/api/radiobrowser?${params.toString()}`);
+import { getApiBasePath } from '../config/api';
+
+    const response = await fetch(`${getApiBasePath()}/radiobrowser?${params.toString()}`);
     
     if (!response.ok) return null;
     

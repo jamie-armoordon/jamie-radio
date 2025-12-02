@@ -1,0 +1,52 @@
+# Nginx configuration for iRadio application
+# Add this to your WSL nginx config: /etc/nginx/sites-available/home-reverse-proxy
+# Or create a separate file: /etc/nginx/sites-available/iradio
+
+# iRadio application under /radio/
+location /radio/ {
+    # Strip /radio prefix when proxying to API server
+    rewrite ^/radio/(.*) /$1 break;
+    
+    proxy_pass http://127.0.0.1:3001;
+    proxy_http_version 1.1;
+    
+    # WebSocket support for API
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    
+    # Increase timeouts for long-running requests
+    proxy_read_timeout 300s;
+    proxy_connect_timeout 75s;
+    
+    # Increase body size for audio uploads
+    client_max_body_size 50M;
+}
+
+# Wake Word WebSocket (separate service on port 8000)
+# Note: The wake word service is accessed via /radio/ws
+# The API server proxies /ws to the wake word service
+location /radio/ws {
+    # Strip /radio prefix
+    rewrite ^/radio/(.*) /$1 break;
+    
+    proxy_pass http://127.0.0.1:8000;
+    proxy_http_version 1.1;
+    
+    # WebSocket upgrade headers
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    
+    # Long timeout for WebSocket connections
+    proxy_read_timeout 86400s;
+}
+

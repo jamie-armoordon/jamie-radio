@@ -50,7 +50,7 @@ export default defineConfig({
             },
           },
           {
-            urlPattern: /\/api\/logo.*/i,
+            urlPattern: /\/radio\/api\/logo.*|\/api\/logo.*/i,
             handler: 'CacheFirst',
             options: {
               cacheName: 'logo-cache',
@@ -61,7 +61,7 @@ export default defineConfig({
             },
           },
           {
-            urlPattern: /\/api\/artwork.*/i,
+            urlPattern: /\/radio\/api\/artwork.*|\/api\/artwork.*/i,
             handler: 'CacheFirst',
             options: {
               cacheName: 'artwork-cache',
@@ -73,7 +73,7 @@ export default defineConfig({
           },
         ],
         navigateFallback: '/index.html',
-        navigateFallbackDenylist: [/^\/api/],
+        navigateFallbackDenylist: [/^\/api/, /^\/radio\/api/],
       },
     }),
   ],
@@ -81,6 +81,31 @@ export default defineConfig({
     port: 3000,
     host: true, // Allow access from other devices on the network
     proxy: {
+      // Proxy /radio/api to local API server (for production-like dev environment)
+      '/radio/api': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+        secure: false,
+        ws: true, // Enable WebSocket proxying
+        rewrite: (path) => path.replace(/^\/radio\/api/, '/api'),
+        configure: (proxy, _options) => {
+          proxy.on('error', (err: NodeJS.ErrnoException, _req, res) => {
+            // Handle ECONNREFUSED gracefully - API server might be starting
+            if (err.code === 'ECONNREFUSED') {
+              console.warn('[Vite Proxy] API server not ready, retrying...');
+              // Don't crash - let the request fail gracefully
+              if (res && !(res as any).headersSent) {
+                (res as any).writeHead(503, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'API server unavailable' }));
+              }
+            }
+          });
+          proxy.on('proxyReqWs', (proxyReq, req, socket) => {
+            console.log('[Vite Proxy] WebSocket upgrade:', req.url);
+          });
+        },
+      },
+      // Proxy /api for backward compatibility in dev
       '/api': {
         target: 'http://localhost:3001',
         changeOrigin: true,
@@ -104,6 +129,14 @@ export default defineConfig({
             console.log('[Vite Proxy] WebSocket upgrade:', req.url);
           });
         },
+      },
+      // Proxy /radio/ws for wake word WebSocket
+      '/radio/ws': {
+        target: 'ws://localhost:8000',
+        changeOrigin: true,
+        secure: false,
+        ws: true,
+        rewrite: (path) => path.replace(/^\/radio\/ws/, '/ws'),
       },
     },
   },

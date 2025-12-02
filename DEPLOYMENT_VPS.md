@@ -431,7 +431,7 @@ upstream iradio_wakeword {
 server {
     listen 80;
     listen [::]:80;
-    server_name radio.jamiearmoordon.co.uk;
+    server_name server.jamiearmoordon.co.uk;
 
     # Let's Encrypt challenge
     location /.well-known/acme-challenge/ {
@@ -447,11 +447,11 @@ server {
 server {
     listen 443 ssl http2;
     listen [::]:443 ssl http2;
-    server_name radio.jamiearmoordon.co.uk;
+    server_name server.jamiearmoordon.co.uk;
 
     # SSL certificates (will be configured with Certbot)
-    ssl_certificate /etc/letsencrypt/live/radio.jamiearmoordon.co.uk/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/radio.jamiearmoordon.co.uk/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/server.jamiearmoordon.co.uk/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/server.jamiearmoordon.co.uk/privkey.pem;
 
     # SSL configuration
     ssl_protocols TLSv1.2 TLSv1.3;
@@ -466,51 +466,57 @@ server {
     # Increase body size for audio uploads
     client_max_body_size 50M;
 
-    # Frontend
-    location / {
-        proxy_pass http://iradio_frontend;
+    # iRadio application under /radio/
+    location /radio/ {
+        # Strip /radio prefix when proxying to API server
+        rewrite ^/radio/(.*) /$1 break;
+        
+        proxy_pass http://127.0.0.1:3001;
         proxy_http_version 1.1;
+        
+        # WebSocket support for API
         proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
-    }
-
-    # API endpoints
-    location /api {
-        proxy_pass http://iradio_api;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
+        proxy_set_header Connection "upgrade";
+        
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         
-        # WebSocket support for API
-        proxy_set_header Connection "upgrade";
-        proxy_read_timeout 86400;
+        # Increase timeouts for long-running requests
+        proxy_read_timeout 300s;
+        proxy_connect_timeout 75s;
+        
+        # Increase body size for audio uploads
+        client_max_body_size 50M;
     }
 
-    # Wake Word WebSocket
-    location /ws {
-        proxy_pass http://iradio_wakeword;
+    # Wake Word WebSocket (separate service on port 8000)
+    # Note: The wake word service is accessed via /radio/ws
+    location /radio/ws {
+        # Strip /radio prefix
+        rewrite ^/radio/(.*) /$1 break;
+        
+        proxy_pass http://127.0.0.1:8000;
         proxy_http_version 1.1;
+        
+        # WebSocket upgrade headers
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
+        
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_read_timeout 86400;
+        
+        # Long timeout for WebSocket connections
+        proxy_read_timeout 86400s;
     }
 
-    # AssemblyAI WebSocket Proxy
-    location /api/assemblyai-proxy {
-        proxy_pass http://iradio_api/api/assemblyai-proxy;
+    # AssemblyAI WebSocket Proxy (via /radio/api)
+    location /radio/api/assemblyai-proxy {
+        rewrite ^/radio/(.*) /$1 break;
+        proxy_pass http://127.0.0.1:3001;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -518,9 +524,10 @@ server {
         proxy_read_timeout 86400;
     }
 
-    # VAD WebSocket
-    location /api/vad {
-        proxy_pass http://iradio_api/api/vad;
+    # VAD WebSocket (via /radio/api)
+    location /radio/api/vad {
+        rewrite ^/radio/(.*) /$1 break;
+        proxy_pass http://127.0.0.1:3001;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -570,7 +577,7 @@ sudo apt install -y certbot python3-certbot-nginx
 
 ```bash
 # Replace with your domain
-sudo certbot --nginx -d radio.jamiearmoordon.co.uk
+sudo certbot --nginx -d server.jamiearmoordon.co.uk
 
 # Follow the prompts:
 # - Enter email address

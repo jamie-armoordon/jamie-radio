@@ -1,6 +1,8 @@
+import { getApiBasePath } from '../config/api';
+
 export async function askJamieAI(prompt: string): Promise<string> {
   try {
-    const response = await fetch('/api/ai', {
+    const response = await fetch(`${getApiBasePath()}/ai`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

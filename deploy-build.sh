@@ -12,8 +12,10 @@ cd ~/jamie-radio || { echo "Error: ~/jamie-radio not found"; exit 1; }
 echo "Pulling latest changes..."
 git pull origin main
 
-# Set environment variable for WebSocket URL
-export VITE_WAKE_WORD_WS_URL="wss://radio.jamiearmoordon.co.uk/ws"
+# Set environment variable for WebSocket URL (optional - frontend auto-detects)
+# Uncomment if you need to override the auto-detection:
+# export VITE_WAKE_WORD_WS_URL="wss://server.jamiearmoordon.co.uk/radio/ws"
+# export VITE_API_BASE_PATH="/radio/api"
 
 # Install dependencies if needed
 if [ ! -d "node_modules" ]; then

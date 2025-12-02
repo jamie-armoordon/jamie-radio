@@ -887,8 +887,10 @@ wss.on('connection', (clientWs, req) => {
 
 // 404 handler - serve index.html for SPA routes (only if dist exists)
 app.use((req, res) => {
-  // If dist folder exists and request is not for /api, try to serve index.html for SPA routing
-  if (existsSync(distPath) && !req.url.startsWith('/api')) {
+  // If dist folder exists and request is not for /api or /radio/api, try to serve index.html for SPA routing
+  // Note: nginx will strip /radio prefix before proxying, so we check for both patterns
+  const isApiRequest = req.url.startsWith('/api') || req.url.startsWith('/radio/api');
+  if (existsSync(distPath) && !isApiRequest) {
     const indexPath = path.join(distPath, 'index.html');
     if (existsSync(indexPath)) {
       res.sendFile(indexPath);

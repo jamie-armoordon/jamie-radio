@@ -33,7 +33,9 @@ export class GoogleAITTSEngine implements TTSEngine {
       console.log('[GoogleAITTS] Requesting TTS audio for:', text);
       
       // Call API endpoint to generate TTS audio
-      const response = await fetch('/api/tts', {
+import { getApiBasePath } from '../../config/api';
+
+      const response = await fetch(`${getApiBasePath()}/tts`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

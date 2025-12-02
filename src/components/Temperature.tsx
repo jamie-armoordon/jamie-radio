@@ -30,7 +30,9 @@ export default function Temperature() {
         params.set('city', city);
       }
 
-      const response = await fetch(`/api/weather?${params.toString()}`);
+import { getApiBasePath } from '../config/api';
+
+      const response = await fetch(`${getApiBasePath()}/weather?${params.toString()}`);
       if (response.ok) {
         const data = await response.json();
         if (data.temperature !== null && data.temperature !== undefined) {

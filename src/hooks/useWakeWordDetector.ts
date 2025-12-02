@@ -427,23 +427,11 @@ class WakeWordDetector {
   }
 }
 
+import { getWakeWordWebSocketUrl } from '../config/api';
+
 // Get WebSocket URL at runtime based on current hostname
 function getWebSocketUrl(): string {
-  // Check for explicit env var (build-time)
-  if (import.meta.env.VITE_WAKE_WORD_WS_URL) {
-    return import.meta.env.VITE_WAKE_WORD_WS_URL;
-  }
-  
-  // Runtime detection: use wss:// for production domain, ws://localhost for dev
-  const hostname = window.location.hostname;
-  if (hostname === 'radio.jamiearmoordon.co.uk' || hostname.includes('jamiearmoordon.co.uk')) {
-    // Production: use secure WebSocket
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    return `${protocol}//${hostname}/ws`;
-  }
-  
-  // Development: use localhost
-  return 'ws://localhost:8000/ws';
+  return getWakeWordWebSocketUrl();
 }
 
 export function useWakeWordDetector({

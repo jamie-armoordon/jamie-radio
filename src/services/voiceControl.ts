@@ -3,6 +3,7 @@ import { useSettingsStore } from '../store/settingsStore';
 import { Timer } from '../utils/timer';
 import { logger } from '../utils/logger';
 import { AssemblyAI } from 'assemblyai';
+import { getApiBasePath } from '../config/api';
 
 interface VoiceCommand {
   type: 'play' | 'next' | 'previous' | 'next_station' | 'previous_station' | 'set_volume' | 'volume_up' | 'volume_down' | 'mute' | 'unmute' | 'whats_playing';
@@ -311,7 +312,7 @@ export class VoiceControl {
     
     // Token expired or doesn't exist, fetch new one
     logger.log('VoiceControl', 'Fetching new AssemblyAI token...');
-    const tokenResponse = await fetch('/api/assemblyai-token');
+    const tokenResponse = await fetch(`${getApiBasePath()}/assemblyai-token`);
     if (!tokenResponse.ok) {
       throw new Error('Failed to get AssemblyAI token from backend');
     }
@@ -943,7 +944,7 @@ export class VoiceControl {
         : undefined;
       
       // Use SSE streaming API
-      const response = await fetch('/api/ai-text', {
+      const response = await fetch(`${getApiBasePath()}/ai-text`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
